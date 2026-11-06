@@ -4,7 +4,7 @@
 
 La ventana es **de DSH mismo** — el panel flotante del kit de acople, el que usa la barra lateral derecha — y no una segunda ventana del navegador: en la barra de tareas sigue habiendo una sola ventana de DSH. Dentro está la **vista de conversación real**: la misma columna, no una copia redibujada, así que escribir, desplazarse, cambiar entre Conversación y Trayectoria, el compositor, los adjuntos y el selector de persona siguen siendo nativos.
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## Uso
 

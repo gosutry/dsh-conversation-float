@@ -4,7 +4,7 @@
 
 La fenêtre est **celle de DSH** — le panneau flottant du kit d'ancrage, celui qu'utilise la barre latérale droite — et non une seconde fenêtre du navigateur : la barre des tâches n'affiche toujours qu'une fenêtre DSH. Elle contient la **vraie vue de conversation** : la même colonne, pas une copie redessinée, donc la saisie, le défilement, le passage entre Conversation et Trajectoire, le compositeur, les pièces jointes et le sélecteur de persona restent natifs.
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## Utilisation
 

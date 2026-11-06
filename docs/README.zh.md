@@ -4,7 +4,7 @@
 
 浮窗是 **DSH 自己的**——右侧栏那套停靠套件的浮动面板，不是第二个浏览器窗口：任务栏里仍然只有 DSH 一个窗。浮窗里放的是**真会话视图**（是原来那一列，不是重画一份），所以打字、滚动、切「对话 / 轨迹」、输入框、附件、人设选择器全都是原生的。
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## 怎么用
 

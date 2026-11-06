@@ -4,7 +4,7 @@
 
 Окно **принадлежит самому DSH** — это плавающая панель док-набора, та же, что использует правая панель, а не второе окно браузера: в панели задач по-прежнему одно окно DSH. Внутри — **настоящий просмотр беседы**: та же колонка, а не перерисованная копия, поэтому ввод, прокрутка, переключение между «Беседой» и «Траекторией», композер, вложения и выбор персонажа остаются нативными.
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## Как пользоваться
 

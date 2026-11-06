@@ -4,7 +4,7 @@
 
 The float is **DSH's own** — the dock kit's floating panel, the same one the right sidebar uses — not a second browser window: the taskbar still shows a single DSH window. It holds **the real conversation view**, the same column rather than a redrawn copy, so typing, scrolling, switching between Conversation and Trajectory, the composer, attachments and the persona picker all stay native.
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](README.md) · [简体中文](docs/README.zh.md) · [日本語](docs/README.ja.md) · [Deutsch](docs/README.de.md) · [Español](docs/README.es.md) · [Français](docs/README.fr.md) · [Português](docs/README.pt.md) · [Русский](docs/README.ru.md)
 
 ## Use it
 

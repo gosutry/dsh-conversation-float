@@ -4,7 +4,7 @@
 
 フロートは **DSH 自身のもの**——右サイドバーと同じドックキットのフローティングパネルで、二つ目のブラウザウィンドウではありません。タスクバーには DSH の窓が一つだけです。中身は**本物の会話ビュー**（同じ列であって、描き直した複製ではない）なので、入力・スクロール・「会話／軌跡」の切り替え・コンポーザー・添付・ペルソナ選択はすべてネイティブのまま動きます。
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## 使い方
 

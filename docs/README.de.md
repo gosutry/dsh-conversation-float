@@ -4,7 +4,7 @@
 
 Das Float gehört **DSH selbst** — es ist das schwebende Panel des Dock-Kits, dasselbe, das die rechte Seitenleiste nutzt, und kein zweites Browserfenster: In der Taskleiste steht weiterhin genau ein DSH-Fenster. Darin liegt die **echte Konversationsansicht** — dieselbe Spalte, keine neu gezeichnete Kopie —, deshalb bleiben Tippen, Scrollen, der Wechsel zwischen Konversation und Verlauf, der Composer, Anhänge und die Persona-Auswahl nativ.
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## Benutzung
 

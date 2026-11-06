@@ -4,7 +4,7 @@
 
 A janela é **do próprio DSH** — o painel flutuante do kit de ancoragem, o mesmo usado pela barra lateral direita — e não uma segunda janela do navegador: a barra de tarefas continua mostrando uma única janela do DSH. Dentro está a **visualização de conversa real**: a mesma coluna, não uma cópia redesenhada, então digitar, rolar, alternar entre Conversa e Trajetória, o compositor, os anexos e o seletor de persona continuam nativos.
 
-[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
+[English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
 ## Como usar
 
