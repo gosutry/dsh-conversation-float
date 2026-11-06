@@ -1,68 +1,74 @@
-# 会话浮窗 / Conversation float（dsh-conversation-float）
+# Conversation float
 
-把会话视图（对话 / 轨迹）从 DSH 里**拿出来变成一块浮窗**，拖到左、中、右三个位置各有不同归宿。
+**dsh-conversation-float** — lifts the **conversation view** out of its fixed seat in DSH and turns it into a floating panel.
 
-浮窗是 **DSH 自己的**（右侧栏那套停靠套件的浮动面板），不是第二个浏览器窗口：任务栏里仍然只有 DSH 一个窗。浮窗里放的是**真会话那一列**（不是重画一份），所以打字、滚动、切「对话 / 轨迹」、输入框、附件、人设选择器全都是原生的。
+The float is **DSH's own** — the dock kit's floating panel, the same one the right sidebar uses — not a second browser window: the taskbar still shows a single DSH window. It holds **the real conversation view**, the same column rather than a redrawn copy, so typing, scrolling, switching between Conversation and Trajectory, the composer, attachments and the persona picker all stay native.
 
-## 怎么用
+[English](README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
-**入口**：会话标题栏右侧那枚窗口小图标（`会话浮窗`）。
+## Use it
 
-点一下 → 浮窗弹出，里面是活会话，**整个 DSH 只剩这块浮窗**：左栏、右栏、底部那几行都暂时隐去。这时候同一枚按钮的功能反过来——点它**把 DSH 界面叫回来**，再点又收起（一个开关）。浮窗关掉、放进左栏、停进右栏时，DSH 界面会自动回来。
+**Entry**: the small window icon at the right of the session title bar (*Conversation float*).
 
-浮窗**一打开就是大窗**（约 920×711，按窗口大小收放），不用每次手动拉。做法是调 dock kit 自己的 `resizeFloat` 意图（`sidebarRight.require()` → `actions.resizeFloat(sessionId, paneId, rect)`，`paneId` 取浮窗上的 `data-dockkit-float`）。只放大、不缩小：你已经拉大的浮窗，它不会给你改小。
+One click opens the float and the rest of the DSH chrome steps aside; the same button then brings DSH back, so it is one toggle. Closing the float, stowing it in the left sidebar or docking it into the right sidebar brings the chrome back on its own.
 
-若右侧栏原本是收起的，开浮窗前会**自动展开**（好让浮窗的「收回到侧边栏」有地方可落）；左栏若收着，也会先展开——判定左栏是否收起是**量宽度**（窄窗口下不写收起标记）。
+The float **opens large** (about 920×711, scaled to the window) by calling the dock kit's own `resizeFloat` intent — `sidebarRight.require()` → `actions.resizeFloat(sessionId, paneId, rect)`, with `paneId` read from `data-dockkit-float` on the float. It only grows a float; one you already enlarged is never shrunk back.
 
-**关掉浮窗、会话回中栏时，左右栏会还原成开浮窗之前那副样子**（比如开浮窗前是「左开右关」，关掉后仍旧「左开右关」）；但如果你在浮窗开着的时候**亲手**动过栏——把右栏收起来，或者把浮窗没能替你展开的那一栏自己拉开——那就**以你最后一次的设置为准**，不会被改回去。
+A collapsed right sidebar is **expanded before** the float opens, so "stow back into the sidebar" has somewhere to land, and a collapsed left sidebar is expanded too — collapse is detected by measuring width, so a narrow window never gets a collapse flag written.
 
-判断「亲手」只看你的按下／按键，而且开／关两个方向都算：DSH 自己在窄窗口里把左栏收成窄条、或者一边栏在隐藏期间被重新排布，都不算你动过，那种情形照样按开浮窗前还原。快照只在动任何栏之前取一次，浮窗期间绝不会拿中途的样子去覆盖它。
+**Closing the float and returning the conversation to the middle column restores the sidebars exactly as they were before it opened.** If you touched a sidebar **yourself** while the float was open, that last setting wins. "Yourself" counts only your own press or key, in both directions: DSH narrowing the left sidebar on a small window, or a hidden sidebar being re-laid-out, does not count. The snapshot is taken once, before any sidebar is touched, and is never overwritten while the float is up.
 
-**拖动浮窗**：按住浮窗顶栏拖动。**按住满 1.2 秒**，这次拖动才进入"判定状态"——从那一刻起预览框跟着指针实时换带，松手就按当时所在的那一带落位。判定状态**整次拖动只进一次**：换到别的带不会重新等 1.2 秒。按不满 1.2 秒就松手 = 什么都不发生（防止手滑把会话挪走）。
+## Drag it left, centre or right
 
-三条带就是窗口真实的三块：**左栏**（框架第 0 列，当前 0..280）、**中栏**（左栏右缘到右栏左缘，280..680）、**右栏**（`data-rightbar-col` 那列，680..1097）。预览框覆盖的就是将要落进去的那一块，尺寸与它一致。
+Hold the float's title bar to drag. **Holding for 1.2 s** puts the drag into judging; from then on the outline follows the band under the pointer and the release drops into that band. Judging starts once per drag, so crossing bands never waits again. Releasing before 1.2 s does nothing — no accidental moves.
 
-| 落点 | 松手之后 |
+The three bands are the window's real columns: **left sidebar** (frame column 0, currently 0..280), **middle column** (280..680), **right sidebar** (the `data-rightbar-col` column, 680..1097). The outline covers exactly the block the float will land in, at the same size.
+
+| Drop | After release |
 | --- | --- |
-| **左** | 浮窗**收进左栏抽屉**：浮窗并没有关掉，只是看不见了，所以中栏**保持空着**；左栏多出一行 `会话浮窗`，点它浮窗回来 |
-| **中** | 浮窗关掉，会话回到中栏原位置 |
-| **右** | 会话作为**右侧栏的一个页面**停进去（DSH 原生页签，带自己的 `收回到侧边栏` 和关闭） |
+| **Left** | The float is **stowed in the left sidebar drawer**: it is not closed, only invisible, so the middle column stays empty; the left sidebar grows a *Conversation float* row that brings it back |
+| **Centre** | The float closes and the conversation returns to the middle column |
+| **Right** | The conversation docks as a **page in the right sidebar** — a native DSH tab with its own *Return to sidebar* and close |
 
-左栏那一行只在"确实把浮窗放进去了"之后才存在；没放进去之前左栏是空的，不会常驻一个入口。
+The left-sidebar row exists only after a float has actually been put there; before that the left sidebar stays empty and no permanent entry is added.
 
-## 它是怎么做的（为什么不重画会话）
+## How it works (and why the conversation is not redrawn)
 
-- 会话只有**一份 DOM**：插件把承载会话的那一列搬进浮窗的正文（同一文档、同一 React 根），关闭/换宿主时再搬回原位；搬丢的兜底是"原位置没了就回中栏"。
-- 「收进左栏」= 给浮窗根节点打一个标记让它隐藏（`visibility/opacity`），**不关闭**面板——这就是中栏能一直空着的原因。
-- 「停到右栏」= 把这枚页签交给右侧栏（`openResource(..., { destination: 'sidebar' })`），由 DSH 自己搬运与停靠。
+- The conversation exists as **one DOM**: the plugin moves the column that carries it into the panel body (same document, same React root) and moves it back on close or host change; if its original seat is gone, the fallback is the middle column.
+- **Stow left** = a marker on the float's root makes it hidden (`visibility`/`opacity`); the panel is **not closed**, which is why the middle column can stay empty.
+- **Dock right** = hands the tab to the right sidebar (`openResource(..., { destination: 'sidebar' })`) and lets DSH do the move and the docking.
 
-## 性能
+## Performance
 
-拖动时**每次动画帧最多算一次**，三条带的尺寸在按下那一刻量好；预览框只在**真的换带**时才重画（用 `transform` 位移）。早期版本每次鼠标移动都量版面+写四个样式，那才是"比 DSH 原生拖动静涩"的原因。
+Each animation frame does at most one measurement; the three bands are measured once, on press. The outline is repainted only when the band actually changes, and moves with `transform`. Earlier versions measured layout and wrote four styles on every mouse move — that, not the drop logic, was what made dragging feel slower than DSH's own.
 
-## 已知边界
+## Known limits
 
-- 会话只能有一个宿主：左栏那一行是**入口**，不会出现"左栏里也放着一份正在滚动的会话"。
-- 从抽屉取出浮窗时，浮窗会出现在**当初放进去的位置**（可能压着左栏），不会自动回中。
-- 这是 DSH 窗口内的浮窗，不是独立的系统窗口。
-- 关掉 DSH 再开：抽屉状态不保留，会话正常回到中栏。
+- A conversation has exactly one host: the left-sidebar row is an **entry**, never a second live copy of the conversation.
+- Taking the float back out of the drawer puts it back **where it was stowed** (possibly over the left sidebar); it does not recentre.
+- This is a float inside the DSH window, not a separate OS window.
+- Restart DSH and the drawer state is gone; the conversation returns to the middle column.
 
-## 安装
+## Install
 
-### 从 npm（推荐）
+### From npm
 
 ```bash
 npm i dsh-conversation-float
 ```
 
-装完还要在 **profile 的 `package.json`** 里登记，两步缺一不可：
+Then register it in the **profile's `package.json`** — both steps are required:
 
-1. `dependencies` 里加 `"dsh-conversation-float": "^0.1.1"`（或你已经写作别的版本）
-2. `dsh.profile.bundles` 里加 `"dsh-conversation-float"`——登记成 bundle 之后它才会出现在插件列表里，也才能被开关
+1. add `"dsh-conversation-float": "^0.1.1"` to `dependencies`
+2. add `"dsh-conversation-float"` to `dsh.profile.bundles` — only a registered bundle shows up in the plugin list and can be toggled
 
-### 从源码
+### From source
 
-1. 取源码到本地任意目录
-2. 以 junction 挂到 `<profile 目录>/node_modules/dsh-conversation-float`
-3. profile 的 `package.json`：`dependencies` 写 `"dsh-conversation-float": "link:<源码路径>"`，`dsh.profile.bundles` 里加 `"dsh-conversation-float"`
-4. 客户端（`client.js`）改完**热更新**生效；宿主半（`index.js`）是空实现，改它才需要重启。
+1. put the source anywhere
+2. junction it into `<profile>/node_modules/dsh-conversation-float`
+3. in the profile's `package.json`: `dependencies` gets `"dsh-conversation-float": "link:<path>"`, `dsh.profile.bundles` gets `"dsh-conversation-float"`
+4. `client.js` reloads hot; the host half (`index.js`) is a no-op and needs a restart only if you change it
+
+## License
+
+MIT

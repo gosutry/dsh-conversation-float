@@ -11,7 +11,7 @@
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
-  "description": "Turns the Conversation view into a DSH-owned floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar.",
+  "description": "Lifts the conversation view out of its fixed seat in DSH and turns it into a floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar.",
   "icon": "./icon.svg",
   "license": "MIT",
   "author": "gosutry",
@@ -21,7 +21,7 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md",
+    "README*.md",
     "LICENSE"
   ],
   "keywords": [
