@@ -47,9 +47,22 @@
 - 这是 DSH 窗口内的浮窗，不是独立的系统窗口。
 - 关掉 DSH 再开：抽屉状态不保留，会话正常回到中栏。
 
-## 安装（当前 desktop profile）
+## 安装
 
-1. 源码：`E:\DSH\sessionwin\dsh-conversation-float`
-2. 以 junction 挂在 `C:\Users\gsc\.dsh\profiles\desktop\node_modules\dsh-conversation-float`
-3. profile 的 `package.json`：`dependencies` 里有 `"dsh-conversation-float": "link:E:/DSH/sessionwin/dsh-conversation-float"`，`dsh.profile.bundles` 里有 `"dsh-conversation-float"`（登记成 bundle 之后它才会出现在插件列表里，也才能被开关）
+### 从 npm（推荐）
+
+```bash
+npm i dsh-conversation-float
+```
+
+装完还要在 **profile 的 `package.json`** 里登记，两步缺一不可：
+
+1. `dependencies` 里加 `"dsh-conversation-float": "^0.1.1"`（或你已经写作别的版本）
+2. `dsh.profile.bundles` 里加 `"dsh-conversation-float"`——登记成 bundle 之后它才会出现在插件列表里，也才能被开关
+
+### 从源码
+
+1. 取源码到本地任意目录
+2. 以 junction 挂到 `<profile 目录>/node_modules/dsh-conversation-float`
+3. profile 的 `package.json`：`dependencies` 写 `"dsh-conversation-float": "link:<源码路径>"`，`dsh.profile.bundles` 里加 `"dsh-conversation-float"`
 4. 客户端（`client.js`）改完**热更新**生效；宿主半（`index.js`）是空实现，改它才需要重启。

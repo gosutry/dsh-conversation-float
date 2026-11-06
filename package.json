@@ -1,25 +1,65 @@
 {
   "name": "dsh-conversation-float",
   "version": "0.1.1",
-  "private": true,
+  "private": false,
   "type": "module",
-  "description": "Turns the Conversation view into DSH own floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar.",
-  "license": "MIT",
-  "icon": "./icon.svg",
+  "main": "./index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
   },
+  "description": "Turns the Conversation view into a DSH-owned floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar.",
+  "icon": "./icon.svg",
+  "license": "MIT",
+  "author": "gosutry",
   "files": [
     "index.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "conversation",
+    "chat",
+    "floating-window",
+    "docked-window",
+    "sidebar",
+    "layout",
+    "web-ui",
+    "react"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gosutry/dsh-conversation-float.git"
+  },
+  "homepage": "https://github.com/gosutry/dsh-conversation-float#readme",
+  "bugs": {
+    "url": "https://github.com/gosutry/dsh-conversation-float/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.1-rc.2 <1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

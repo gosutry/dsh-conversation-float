@@ -1,0 +1,6 @@
+node_modules/
+*.tgz
+.gh-release-key
+.gh-release-key.pub
+.DS_Store
+Thumbs.db
