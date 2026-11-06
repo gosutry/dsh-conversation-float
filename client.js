@@ -355,9 +355,11 @@ window.__ModuleLoader__.load({
       // The float is leaving the screen: the rest of DSH has to come back.
       if (chromeless) setChromeless(false)
       // A float that goes home hands the sidebars back as they were — but only
-      // when the user has not reshaped them meanwhile, and never while the tab
-      // is merely moving into the right sidebar.
-      if (!dockingRight && !suspendRestore) restoreChrome()
+      // when it really goes home. Moving the live column between hosts (back
+      // out of the left drawer, a remounted float body) also detaches it for
+      // a frame; restoring there would collapse the sidebars under a float
+      // that is still on screen.
+      if (!dockingRight && !suspendRestore) scheduleRestoreChrome()
       dockingRight = false
       if (column === null) return
       column.style.width = ''
@@ -425,6 +427,8 @@ window.__ModuleLoader__.load({
         }
         noteChromeChange()
       }
+
+
       const schedule = () => {
         if (frame !== 0) return
         frame = window.requestAnimationFrame(check)
@@ -649,6 +653,10 @@ window.__ModuleLoader__.load({
       // left sidebar on its own there, and reading that as the user's choice
       // would cancel the restore the float promised.
       if (chromeless || pendingChromeless) return
+      // A re-host (out of the drawer, a remounted body) leaves the column out
+      // of the document and the right column reading "not expanded" for a
+      // frame. That is the plugin moving, never the user choosing.
+      if (dockedLeft || (floatPanel() !== null && movedColumn === null)) return
       const now = performance.now()
       if (now < holdOffUntil) return
       const current = chromeNow()
@@ -657,6 +665,25 @@ window.__ModuleLoader__.load({
       if (current.leftCollapsed === savedChrome.leftCollapsed && current.rightExpanded === savedChrome.rightExpanded) return
       if (now - gestureAt > GESTURE_WINDOW) return
       chromeTouched = true
+    }
+
+    /**
+     * A detach is not a close until the float is really gone. The drawer row
+     * re-hosts the live column and a remounted body re-attaches it, and both
+     * detach it for a frame; the chrome is restored only when nothing took the
+     * column back and no panel is left to finish tearing down.
+     */
+    function scheduleRestoreChrome(depth = 0) {
+      window.requestAnimationFrame(() => {
+        // A host took the column back: the float is still open, not closed.
+        if (dockedLeft || movedColumn !== null) return
+        // The panel is still on its way out; give it a few frames.
+        if (floatPanel() !== null) {
+          if (depth < 12) scheduleRestoreChrome(depth + 1)
+          return
+        }
+        restoreChrome()
+      })
     }
 
     /**
@@ -725,7 +752,9 @@ window.__ModuleLoader__.load({
       dockedLeft = false
       syncDockRow()
       unstowFloat()
-      setChromeless(true)
+      // The drawer row lives on a normal window: taking the float back out
+      // puts it ON that window, not instead of it. Blanking the window here
+      // is what made the drawer and the right column look collapsed.
     }
 
     /** The tab id of our floating occurrence, or null when it is not minted. */
@@ -1372,6 +1401,7 @@ window.__ModuleLoader__.load({
         // A previous build hid the two shipped View buttons; put them back.
         for (const el of document.querySelectorAll('[data-dsh-conversation-float-core-tab]')) el.removeAttribute('data-dsh-conversation-float-core-tab')
         setChromeless(false)
+
 
         ctx.effect(() =>
           ctx.slots.inject('main', () =>
