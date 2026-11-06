@@ -51,6 +51,8 @@ Au plus une mesure par image d'animation ; les trois bandes sont mesurées une f
 
 ## Installation
 
+Nécessite DSH **>= 0.2.2-rc.1**, la version sur laquelle ce bundle est développé et testé.
+
 ### Depuis npm
 
 ```bash

@@ -51,6 +51,8 @@ No máximo uma medição por quadro de animação; as três faixas são medidas 
 
 ## Instalação
 
+Requer DSH **>= 0.2.2-rc.1**, a versão com que este bundle foi desenvolvido e testado.
+
 ### Do npm
 
 ```bash

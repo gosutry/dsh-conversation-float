@@ -51,6 +51,8 @@ Pro Animationsframe höchstens eine Messung; die drei Bänder werden beim Drück
 
 ## Installation
 
+Benötigt DSH **>= 0.2.2-rc.1** — gegen diese Version entwickelt und geprüft.
+
 ### Aus npm
 
 ```bash

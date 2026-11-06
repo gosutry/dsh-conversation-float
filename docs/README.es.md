@@ -51,6 +51,8 @@ Como mucho una medición por fotograma; las tres franjas se miden una vez, al pu
 
 ## Instalación
 
+Requiere DSH **>= 0.2.2-rc.1**, la versión con la que se desarrolló y probó este bundle.
+
 ### Desde npm
 
 ```bash

@@ -51,6 +51,8 @@ Each animation frame does at most one measurement; the three bands are measured 
 
 ## Install
 
+Requires DSH **>= 0.2.2-rc.1** — the version this bundle is developed and tested against.
+
 ### From npm
 
 ```bash
