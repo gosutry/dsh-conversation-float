@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Janela flutuante da conversa",
+    "description": "Transforma a vista de conversa no painel flutuante do próprio DSH: à esquerda guarda na barra lateral, no centro volta à coluna central, à direita ancora na barra direita."
+  }
+}

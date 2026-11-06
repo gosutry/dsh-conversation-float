@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Konversations-Float",
+    "description": "Macht die Konversationsansicht zu DSH eigenem schwebenden Panel: nach links ziehen legt sie in der linken Seitenleiste ab, Mitte bringt sie zurück, rechts dockt sie rechts an."
+  }
+}

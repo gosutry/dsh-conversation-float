@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Fenêtre flottante de conversation",
+    "description": "Transforme la vue de conversation en panneau flottant propre à DSH : à gauche il se range dans la barre latérale, au centre il revient dans la colonne, à droite il s ancre à droite."
+  }
+}

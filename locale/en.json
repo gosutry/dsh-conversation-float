@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Conversation float",
+    "description": "Turns the Conversation view into DSH own floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar."
+  }
+}

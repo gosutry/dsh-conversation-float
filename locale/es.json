@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Ventana flotante de conversación",
+    "description": "Convierte la vista de conversación en el panel flotante propio de DSH: a la izquierda se guarda en la barra lateral, al centro vuelve a la columna central, a la derecha se acopla a la barra derecha."
+  }
+}
