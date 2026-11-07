@@ -29,6 +29,7 @@ window.__ModuleLoader__.load({
     'use strict'
 
     const React = require('react')
+    const ReactDOM = require('react-dom')
     const h = React.createElement
 
     const NS = 'dsh-conversation-float'
@@ -65,6 +66,12 @@ window.__ModuleLoader__.load({
         "stow": "放进左栏",
         "center": "回到中间",
         "dock": "停到右栏",
+        "dockRight": "停到右栏",
+        "minimize": "收起浮窗",
+        "close": "关闭浮窗",
+        "viewChat": "对话",
+        "viewTrajectory": "轨迹",
+        "viewNeedsFocus": "切到这条会话后就能换页",
         "description": "把会话视图做成 DSH 自带的浮窗：拖到左边收进左栏抽屉、拖到中间回到中栏、拖到右边停进右侧栏。"
       },
       "en": {
@@ -79,6 +86,12 @@ window.__ModuleLoader__.load({
         "stow": "Stow in the left sidebar",
         "center": "Return to the middle",
         "dock": "Dock in the right sidebar",
+        "dockRight": "Dock in the right sidebar",
+        "minimize": "Minimize",
+        "close": "Close",
+        "viewChat": "Chat",
+        "viewTrajectory": "Trajectory",
+        "viewNeedsFocus": "Open this conversation to change pages",
         "description": "Turns the Conversation view into DSH own floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar."
       },
       "de": {
@@ -201,8 +214,11 @@ window.__ModuleLoader__.load({
     const OWN_FLOAT_ATTR = 'data-dsh-conversation-float-float'
     /** Set on every frame column that the float is temporarily hiding. */
     const CHROME_ATTR = 'data-dsh-conversation-float-chromeless'
+    /** Set on the one frame column this plugin has moved somewhere. */
+    const COLUMN_ATTR = 'data-dsh-conversation-float-column'
 
     let sidebarRight = null
+    let uiConversation = null
     let layout = null
     let movedColumn = null
     let movedFrom = null
@@ -279,23 +295,31 @@ window.__ModuleLoader__.load({
      */
     function findColumn() {
       if (movedColumn !== null && movedColumn.isConnected) return movedColumn
+      // The window renders a Conversation of its own. That one is never the
+      // middle column this helper is looking for, so it is skipped by name.
+      const insideOurs = (el) => el !== null && (el.closest(`[${WINDOW_ATTR}]`) !== null || el.closest(`[${WINDOW_CONTENT_ATTR}]`) !== null)
       const candidates = [
-        document.querySelector('[data-conversation-session]'),
+        [...document.querySelectorAll('[data-conversation-session]')].find((el) => !insideOurs(el)) ?? null,
         document.querySelector(`[${ANCHOR_ATTR}]`),
         document.querySelector('[data-conversation-header-corner]'),
         document.querySelector('[data-conversation-tabs]'),
       ]
       for (const anchor of candidates) {
-        if (anchor === null) continue
+        if (anchor === null || insideOurs(anchor)) continue
         // While the Conversation is hosted by one of our bodies, the column is
         // that body's own child — walking up instead would climb out of the
         // right sidebar and name the whole right column as "the column", and
         // moving that into the float feeds it its own ancestor.
         const body = anchor.closest(`[${BODY_ATTR}]`)
         if (body !== null) {
+          // Only a column WE moved into this body counts. A body rendering a
+          // Conversation of its own (a docked page) has the anchor as a view;
+          // reading that view as the frame's column made the panel believe it
+          // was hosting the live column while it was rendering a copy.
           for (const child of Array.from(body.children)) {
-            if (child.contains(anchor)) return child
+            if (child.hasAttribute(COLUMN_ATTR) && child.contains(anchor)) return child
           }
+          return null
         }
         let node = anchor
         while (node.parentElement !== null) {
@@ -448,6 +472,7 @@ window.__ModuleLoader__.load({
       // seat recorded first: the middle column, never the tab it came from.
       if (!keepHome || movedFrom === null) movedFrom = { parent: column.parentNode, next: column.nextSibling }
       movedColumn = column
+      column.setAttribute(COLUMN_ATTR, '')
       column.style.width = "100%"
       column.style.height = "100%"
       column.style.minWidth = "0"
@@ -527,9 +552,19 @@ window.__ModuleLoader__.load({
       return false
     }
 
+    /** Where the column went on its way home (probe only, read by the tests). */
+    function markDetach(where) {
+      try {
+        const box = window.__dshFloatDetach ?? (window.__dshFloatDetach = { seat: 0, center: 0, fallback: 0, nowhere: 0, disconnected: 0, calls: 0 })
+        box.calls += 1
+        box[where] = (box[where] ?? 0) + 1
+      } catch { /* no window yet */ }
+    }
+
     function detachColumn(keepChrome = false) {
       const column = movedColumn
       const home = movedFrom
+      if (column !== null) column.removeAttribute(COLUMN_ATTR)
       movedColumn = null
       movedFrom = null
       notifyState()
@@ -556,16 +591,33 @@ window.__ModuleLoader__.load({
       // DSH took the Conversation down while it was ours (a main panel opened,
       // the Session changed): a node React has removed must not be put back, or
       // a stale copy of the conversation would sit in the middle column.
-      if (!column.isConnected) return
+      if (!column.isConnected) {
+        markDetach('disconnected')
+        return
+      }
       const seat = homeSeat(home)
       if (seat !== null) {
+        markDetach('seat')
         seat.parent.insertBefore(column, seat.before)
         return
       }
       // The recorded seat is gone (the panel took it down with it): put the
       // column back in the middle column so the session is never lost.
       const center = currentCenter()
-      if (center !== null) center.appendChild(column)
+      if (center !== null) {
+        markDetach('center')
+        center.appendChild(column)
+        return
+      }
+      // Last resort: keep it in the frame instead of letting it leave the
+      // document with the window that hosted it.
+      const frame = document.querySelector('[data-shell-overlay]')?.parentElement ?? null
+      if (frame !== null) {
+        markDetach('fallback')
+        frame.insertBefore(column, frame.querySelector(':scope > [data-rightbar-col]'))
+        return
+      }
+      markDetach('nowhere')
     }
 
     /**
@@ -615,6 +667,12 @@ window.__ModuleLoader__.load({
             // home, but the sidebars and the drawer row stay exactly as they are.
             detachColumn(true)
           }
+        }
+        // The same rule for OUR windows: one may keep the live column only
+        // while its own Conversation is the one on screen and it is showing.
+        const inWindow = movedColumn === null ? null : movedColumn.closest(`[${WINDOW_ATTR}]`)
+        if (inWindow !== null && (inWindow.hidden || inWindow.getAttribute(WINDOW_ATTR) !== columnSession(movedColumn))) {
+          detachColumn(true)
         }
         // A page owns the main panel: hand the column back to the frame for as
         // long as it lasts, or the page would be drawn inside a hidden float.
@@ -725,6 +783,14 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Whether the live column is being hosted by one of OUR windows, where the
+     * dock-kit panel is only a hidden shell for the tab.
+     */
+    function columnInOwnWindow() {
+      return movedColumn !== null && movedColumn.closest(`[${WINDOW_ATTR}]`) !== null
+    }
+
+    /**
      * A float that lost its body — clicking the drawer row re-lays the main
      * column, the panel remounts, and the Conversation is momentarily out of the
      * document — is put back together here. An empty float is worse than a flash.
@@ -732,6 +798,9 @@ window.__ModuleLoader__.load({
     function healFloatBody() {
       const panel = floatPanel()
       if (panel === null) return
+      // Our own window is the host: healing here would move the Conversation
+      // into the hidden dock-kit panel instead.
+      if (columnInOwnWindow()) return
       // A float of a Session the window has left, or one hidden behind another
       // Session, is not a host: healing into it would hide the live Conversation.
       if (!panelVisible(panel)) return
@@ -850,8 +919,29 @@ window.__ModuleLoader__.load({
     function liveSession() {
       const column = movedColumn ?? findColumn()
       const shown = column === null ? null : columnSession(column)
-      if (shown !== null) lastSession = shown
-      return shown ?? lastSession
+      if (shown !== null) {
+        lastSession = shown
+        return shown
+      }
+      // A docked page can be the Conversation's only home; its Session is the
+      // one on screen and the entry must still find it.
+      const docked = dockedBodySession()
+      if (docked !== null) {
+        lastSession = docked
+        return docked
+      }
+      return lastSession
+    }
+
+    /** The Session of the right-sidebar page that is on screen, if any. */
+    function dockedBodySession() {
+      for (const host of document.querySelectorAll(`[${BODY_ATTR}]`)) {
+        if (host.closest(`[${FLOAT_ATTR}]`) !== null) continue
+        if (!hostOnScreen(host)) continue
+        const owner = hostSession(host)
+        if (owner !== null) return owner
+      }
+      return null
     }
 
     /**
@@ -871,6 +961,8 @@ window.__ModuleLoader__.load({
       // A floating panel owns the column while it is on screen; a docked tab
       // behind it never takes the column away.
       if (movedColumn !== null && movedColumn.closest(`[${FLOAT_ATTR}]`) !== null) return
+      // One of our windows owns it, for the same reason.
+      if (columnInOwnWindow()) return
       const hosts = dockedHosts()
       if (hosts.length === 0) return
       const column = movedColumn ?? findColumn()
@@ -930,9 +1022,10 @@ window.__ModuleLoader__.load({
 
     /** What the entry's tooltip promises for the next press. */
     function entryTitle() {
-      if (chromeless) return t('showDsh')
-      const panel = floatPanel()
-      return panel === null || panel.hasAttribute(STOW_ATTR) ? t('floatTitle') : t('hideDsh')
+      const sessionId = liveSession()
+      const win = sessionId === null ? undefined : windows.get(sessionId)
+      if (win === undefined) return t('floatTitle')
+      return win.el.hidden ? t('floatTitle') : t('minimize')
     }
 
     function setChromeless(next) {
@@ -1220,39 +1313,46 @@ window.__ModuleLoader__.load({
     }
 
     /** Open (or focus) the float at the dock kit's own default seat. */
+    /**
+     * Give this Conversation a window.
+     *
+     * The window is ours, so no sidebar has to be opened for it and nothing is
+     * re-seated: the tab body mounts and the body is what owns the window. A tab
+     * kept from an earlier run is reused — its body is still mounted, so only
+     * the window has to come back.
+     */
     function openFloatAtDefault() {
+      const sessionId = liveSession()
+      if (sessionId === null) return
       saveChromeState()
-      // The left drawer is where "放进左栏" lands: a collapsed sidebar has no
-      // room to grow the row, so open it first — the right column's rule.
-      try {
-        if (leftCollapsed()) layout?.toggleSidebar?.()
-      } catch (error) {
-        console.warn('[conversation-float] could not expand the left sidebar:', error)
-      }
-      // The docked side of the panel is where "收回到侧边栏" lands: keep it open
-      // so the float always has a home to be returned to.
-      try {
-        if (sidebarRight !== null && sidebarRight.isExpanded?.() === false) sidebarRight.toggleExpanded?.()
-      } catch (error) {
-        console.warn('[conversation-float] could not expand the right sidebar:', error)
-      }
-      if (floatExistingTab()) {
+      if (tabIdFor(sessionId) !== null) {
+        // The tab exists. Floating it is the SAME tab moving, never a second
+        // one: a docked page is floated through the dock kit's own intent, and
+        // the re-hosted body then raises this Conversation's window.
+        if (floatPanel() === null) {
+          // Docked page: close it and open a fresh float, so the floating body
+          // mounts against a clean tree and takes the column with it.
+          closeTabFor(sessionId)
+          window.setTimeout(() => {
+            try {
+              sidebarRight?.openResource(CHAT_ADDRESS, { kind: CHAT_KIND, destination: 'float' })
+            } catch (error) {
+              console.warn('[conversation-float] could not open the floating tab:', error)
+            }
+          }, 60)
+          notifyState()
+          return
+        }
+        showWindow(sessionId)
         notifyState()
-        settleFloatSeat()
-        // The tab was retained, so its body does not mount again: a stow that
-        // was waiting for that mount has to be finished here, now.
-        flushPendingStow()
         return
       }
       try {
         sidebarRight?.openResource(CHAT_ADDRESS, { kind: CHAT_KIND, destination: 'float' })
       } catch (error) {
-        console.warn('[conversation-float] could not open the floating panel:', error)
+        console.warn('[conversation-float] could not open the floating tab:', error)
       }
-      // Opening the float keeps the rest of DSH on screen: the entry drops the
-      // window to the float on the NEXT press, not this one.
       notifyState()
-      settleFloatSeat()
     }
 
     /**
@@ -1274,28 +1374,13 @@ window.__ModuleLoader__.load({
       if (attempt < 5) window.setTimeout(() => settleFloatSeat(attempt + 1), 250)
     }
 
-    function openFloating(attempt = 0) {
-      // The float of the Conversation on screen: bring that one back. A stow
-      // that belongs to another Conversation stays in the drawer — the row is
-      // shared, the panels are not.
-      const stowed = stowedFloat()
-      if (stowed !== null) {
-        stowed.removeAttribute(STOW_ATTR)
-        if (floatOwnerSession(stowed) === stowedSession) stowedSession = null
-        syncDrawerRow()
+    /** Open this Conversation's window, or bring it back from the taskbar. */
+    function openFloating() {
+      const sessionId = liveSession()
+      if (sessionId === null) return
+      if (windows.has(sessionId)) {
+        showWindow(sessionId)
         notifyState()
-        // The live column returns to this float on the next watcher pass; the
-        // panel keeps the seat it had, so a reopened float does not recentre.
-        return
-      }
-      if (floatPanel() !== null) {
-        notifyState()
-        return
-      }
-      // The drawer row opens a main panel first, and the dock kit suppresses a
-      // float while a page owns the panel: ask again once that page has closed.
-      if (mainPanelOpen()) {
-        if (attempt < 15) window.setTimeout(() => openFloating(attempt + 1), 40)
         return
       }
       openFloatAtDefault()
@@ -1387,20 +1472,12 @@ window.__ModuleLoader__.load({
       return null
     }
 
-    /** Close the float; the column comes home through the watcher. */
+    /** Close this Conversation's window: its tab goes, the window with it. */
     function closeFloat() {
-      const id = floatTabId()
-      if (id === null) {
-        console.warn('[conversation-float] no floating tab id; the float stays open')
-        return false
-      }
-      try {
-        sidebarRight.hide(id)
-        return true
-      } catch (error) {
-        console.warn('[conversation-float] could not hide the floating tab:', error)
-        return false
-      }
+      const sessionId = liveSession()
+      if (sessionId === null) return false
+      closeWindow(sessionId)
+      return true
     }
 
     /* ---------------------------------------------------------------- bands */
@@ -1603,6 +1680,20 @@ window.__ModuleLoader__.load({
       syncDrawerRow()
     }
 
+    /** Close this Conversation's tab for good: the next host mounts a new body. */
+    function closeTabFor(sessionId) {
+      const id = tabIdFor(sessionId)
+      if (id === null) return false
+      try {
+        if (typeof sidebarRight?.closeIn === 'function') sidebarRight.closeIn(sessionId, id)
+        else sidebarRight?.hide?.(id)
+        return true
+      } catch (error) {
+        console.warn('[conversation-float] could not close the tab:', error)
+        return false
+      }
+    }
+
     function drop(zone) {
       if (zone === 'right') {
         dockingRight = true
@@ -1616,12 +1707,25 @@ window.__ModuleLoader__.load({
           docked.removeAttribute(STOW_ATTR)
           if (floatOwnerSession(docked) === stowedSession) stowedSession = null
         }
-        syncDrawerRow()
-        try {
-          sidebarRight?.openResource(CHAT_ADDRESS, { kind: CHAT_KIND, destination: 'sidebar' })
-        } catch (error) {
-          console.warn('[conversation-float] could not dock to the right sidebar:', error)
+        // Our window and the right-sidebar page are the same tab: the window
+        // goes first, or it would outlive the page it was showing and sit there
+        // blank while the tab moves underneath it.
+        const shown = liveSession()
+        if (shown !== null) {
+          // A re-hosted body keeps its React tree and loses the column's
+          // bookkeeping with it; closing the tab first gives the page a fresh
+          // body that attaches the column again.
+          closeTabFor(shown)
+          if (windows.has(shown)) destroyWindow(shown)
         }
+        syncDrawerRow()
+        window.setTimeout(() => {
+          try {
+            sidebarRight?.openResource(CHAT_ADDRESS, { kind: CHAT_KIND, destination: 'sidebar' })
+          } catch (error) {
+            console.warn('[conversation-float] could not dock to the right sidebar:', error)
+          }
+        }, 60)
         return
       }
       if (zone === 'left') {
@@ -1923,6 +2027,504 @@ window.__ModuleLoader__.load({
 
     let ctxRef = null
 
+    /* ------------------------------------------------------- the float window */
+
+    /**
+     * A float is OUR window: one element per Conversation, parented to `#root`
+     * rather than to a column, so it stays on screen while the window looks at
+     * another Session or another page.
+     *
+     * The Conversation is rendered by DSH's own `conversation.content` factory
+     * inside this Session's right-sidebar tab body. That body is registered
+     * `keepMounted`, so DSH keeps it — and the Session subtree that owns it —
+     * alive off screen (`SidebarSessionViews.prune` only retires a view without a
+     * retained tab). The body's content node is then moved into this window.
+     */
+    const WINDOW_ATTR = 'data-dsh-conversation-float-window'
+    const WINDOW_BODY_ATTR = 'data-dsh-conversation-float-window-body'
+    const WINDOW_GRIP_ATTR = 'data-dsh-conversation-float-window-grip'
+    const WINDOW_RESIZE_ATTR = 'data-dsh-conversation-float-window-resize'
+    const WINDOW_TITLE_ATTR = 'data-dsh-conversation-float-window-title'
+    const WINDOW_CONTENT_ATTR = 'data-dsh-conversation-float-window-content'
+    const WINDOW_HIDE_PANE_ATTR = 'data-dsh-conversation-float-hide-pane'
+    const WINDOW_KEY = 'dsh-conversation-float.window.'
+    /**
+     * One per-Session content epoch.
+     *
+     * DSH binds a Session's draft writer into a SINGLE slot
+     * (`inputHub.shell(id).bindDraftPersistence`), so whichever Conversation
+     * view mounted last owns typing. The window and the middle column therefore
+     * hand the slot back and forth by remounting, never by fighting for it.
+     */
+    const contentEpochs = new Map()
+    const epochListeners = new Set()
+
+    function bumpContentEpoch(sessionId) {
+      if (sessionId === null) return
+      contentEpochs.set(sessionId, (contentEpochs.get(sessionId) ?? 0) + 1)
+      for (const listener of [...epochListeners]) {
+        try { listener(sessionId) } catch { /* a listener may be unmounting */ }
+      }
+    }
+
+    /** sessionId -> { el, body, title, header, resizer, rect } */
+    const windows = new Map()
+    let windowZ = 20000
+
+    function readWindowRect(sessionId) {
+      try {
+        const raw = window.localStorage.getItem(WINDOW_KEY + sessionId)
+        if (raw === null) return null
+        const r = JSON.parse(raw)
+        if (!r || typeof r.x !== 'number' || typeof r.y !== 'number' || typeof r.width !== 'number' || typeof r.height !== 'number') return null
+        return r
+      } catch {
+        return null
+      }
+    }
+
+    function writeWindowRect(sessionId, rect) {
+      try {
+        window.localStorage.setItem(WINDOW_KEY + sessionId, JSON.stringify(rect))
+      } catch {
+        /* a full quota must not break the float */
+      }
+    }
+
+    /**
+     * Keep a window fully on screen.
+     *
+     * The composer is the last row of the Conversation, so a window whose bottom
+     * hangs past the viewport hides exactly the control this float exists to
+     * keep usable. A window taller than the viewport starts at the top instead.
+     */
+    /**
+     * The strip at the top of the window that belongs to DSH, not to the page.
+     *
+     * On Windows the caption is an overlay drawn ON the web content, so a fixed
+     * window whose header slides under it can no longer be grabbed: the window
+     * is stuck. Every window therefore stops at this line, and none may start
+     * above it.
+     */
+    function windowTopInset() {
+      const root = getComputedStyle(document.documentElement)
+      for (const name of ['--dsh-windows-titlebar-height', '--dsh-frame-top-clearance']) {
+        const raw = root.getPropertyValue(name).trim()
+        const px = Number.parseFloat(raw)
+        if (Number.isFinite(px) && px > 0) return Math.round(px)
+      }
+      return 48
+    }
+
+    function clampRect(rect) {
+      const top = windowTopInset()
+      const usable = Math.max(160, window.innerHeight - top)
+      const width = Math.max(320, Math.min(rect.width, window.innerWidth))
+      const height = Math.max(240, Math.min(rect.height, usable))
+      const maxX = Math.max(0, window.innerWidth - width)
+      const maxY = Math.max(top, window.innerHeight - height)
+      const x = Math.max(0, Math.min(rect.x, maxX))
+      const y = Math.max(top, Math.min(rect.y, maxY))
+      return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
+    }
+
+    /** Re-fit every window after the application window itself changes size. */
+    function reclampWindows() {
+      for (const win of windows.values()) applyWindowRect(win, clampRect(win.rect))
+    }
+
+    function defaultWindowRect() {
+      const top = windowTopInset()
+      const width = Math.min(920, Math.round(window.innerWidth * 0.62))
+      const height = Math.min(720, Math.round((window.innerHeight - top) * 0.86))
+      return clampRect({
+        x: Math.round((window.innerWidth - width) / 2),
+        y: Math.round(top + (window.innerHeight - top - height) / 2),
+        width,
+        height,
+      })
+    }
+
+    function applyWindowRect(win, rect) {
+      win.rect = rect
+      win.el.style.left = rect.x + 'px'
+      win.el.style.top = rect.y + 'px'
+      win.el.style.width = rect.width + 'px'
+      win.el.style.height = rect.height + 'px'
+    }
+
+    function raiseWindow(sessionId) {
+      const win = windows.get(sessionId)
+      if (win === undefined) return
+      windowZ += 1
+      win.el.style.zIndex = String(windowZ)
+    }
+
+    function windowButton(label, glyph, onClick) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('aria-label', label)
+      button.title = label
+      button.textContent = glyph
+      button.style.cssText = 'width:24px;height:24px;flex:none;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:14px/1 system-ui;cursor:pointer'
+      button.addEventListener('pointerdown', (event) => {
+        event.stopPropagation()
+      })
+      button.addEventListener('click', (event) => {
+        event.stopPropagation()
+        onClick()
+      })
+      return button
+    }
+
+    /** A header chip that switches the Conversation's page. */
+    function viewButton(label, onClick) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = label
+      button.setAttribute('data-dsh-conversation-float-view', '')
+      button.style.cssText = 'flex:none;height:22px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:11px/1 ui-sans-serif,system-ui;cursor:pointer'
+      button.addEventListener('pointerdown', (event) => event.stopPropagation())
+      button.addEventListener('click', (event) => {
+        event.stopPropagation()
+        onClick()
+      })
+      return button
+    }
+
+    /**
+     * The Conversation's own page tabs — the ones the header draws.
+     *
+     * They live in the main column's header, which belongs to the Session on
+     * screen. A press on one runs DSH's selectView, so the view ledger, the store
+     * and both columns move together; nothing here re-implements that.
+     */
+    function nativeViewTabs() {
+      return [...document.querySelectorAll('[role="tab"]')].filter((tab) => (
+        tab.closest('[data-dockkit-tab]') === null &&
+        tab.closest(`[${WINDOW_ATTR}]`) === null
+      ))
+    }
+
+    /** Mirror the header's two page tabs onto the window's chips. */
+    function paintWindowView(sessionId) {
+      const win = windows.get(sessionId)
+      if (win === undefined) return
+      const tabs = liveSession() === sessionId ? nativeViewTabs() : []
+      const ids = ['chat', 'trajectory']
+      for (let index = 0; index < ids.length; index += 1) {
+        const button = win.views[ids[index]]
+        const tab = tabs[index]
+        if (button === undefined) continue
+        const usable = tab !== undefined
+        button.disabled = !usable
+        button.title = usable ? '' : t('viewNeedsFocus')
+        button.style.opacity = usable ? '1' : '.45'
+        button.style.cursor = usable ? 'pointer' : 'default'
+        if (!usable) continue
+        const label = (tab.textContent || '').trim()
+        if (label !== '' && button.textContent !== label) button.textContent = label
+        const active = tab.getAttribute('aria-selected') === 'true'
+        button.style.background = active ? 'var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06))' : 'transparent'
+        button.style.color = active ? 'var(--dsw-alias-label-primary, #111)' : 'var(--dsw-alias-label-secondary)'
+        button.style.fontWeight = active ? '600' : '400'
+      }
+    }
+
+    /**
+     * Hand the Session's draft slot back to the middle column.
+     *
+     * The column's own Conversation remounts when the page changes, and that
+     * remount is what re-binds its writer — the slot is single, so it cannot be
+     * bound from here.
+     */
+    function rebindMainComposer() {
+      const tabs = nativeViewTabs()
+      if (tabs.length < 2) return
+      const current = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') ?? tabs[0]
+      const other = tabs.find((tab) => tab !== current)
+      if (current === undefined || other === undefined) return
+      other.click()
+      window.setTimeout(() => {
+        try { current.click() } catch { /* the header may be gone */ }
+      }, 80)
+    }
+
+    /**
+     * Switch the page a Conversation shows, through the service the shipped
+     * header uses (`uiConversation.binding(id).activate(viewId)`).
+     *
+     * The header itself is a plain slot we may not render from here, and a page
+     * docked in the right sidebar has no header of its own — this is how its
+     * chips can still move between Conversation and Trajectory.
+     */
+    function switchConversationView(sessionId, viewId) {
+      if (sessionId === null || typeof viewId !== 'string') return false
+      try {
+        const service = typeof ctxRef?.get === 'function' ? ctxRef.get('uiConversation') : null
+        const binding = service === null || service === undefined ? null : service.binding?.(sessionId)
+        if (binding === null || binding === undefined || typeof binding.activate !== 'function') return false
+        binding.activate(viewId)
+        return true
+      } catch (error) {
+        console.warn('[conversation-float] could not switch the conversation view:', error)
+        return false
+      }
+    }
+
+    /** Press the header's tab at that index, for the Session the window shows. */
+    function activateWindowView(sessionId, index) {
+      if (liveSession() !== sessionId) {
+        paintWindowView(sessionId)
+        return
+      }
+      const tab = nativeViewTabs()[index]
+      if (tab === undefined) {
+        console.warn('[conversation-float] no view tab at index', index)
+        return
+      }
+      tab.click()
+      window.setTimeout(() => paintWindowView(sessionId), 80)
+    }
+
+    function ensureWindow(sessionId) {
+      const existing = windows.get(sessionId)
+      if (existing !== undefined) return existing
+      const root = document.getElementById('root')
+      if (root === null) return null
+      const el = document.createElement('div')
+      el.setAttribute(WINDOW_ATTR, sessionId)
+      el.setAttribute('role', 'dialog')
+      const header = document.createElement('div')
+      header.setAttribute(WINDOW_GRIP_ATTR, '')
+      const title = document.createElement('span')
+      title.setAttribute(WINDOW_TITLE_ATTR, '')
+      title.style.cssText = 'flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 12px/1.2 ui-sans-serif,system-ui'
+      title.textContent = sessionTitle(sessionId) ?? t('floatTitle')
+      const body = document.createElement('div')
+      body.setAttribute(WINDOW_BODY_ATTR, '')
+      const resizer = document.createElement('div')
+      resizer.setAttribute(WINDOW_RESIZE_ATTR, '')
+      header.appendChild(title)
+      // The two shipped pages, and only those: a plugin that invents a
+      // Conversation view of its own must not decide what a float shows.
+      const chatButton = viewButton(t('viewChat'), () => activateWindowView(sessionId, 0))
+      const trajectoryButton = viewButton(t('viewTrajectory'), () => activateWindowView(sessionId, 1))
+      header.appendChild(chatButton)
+      header.appendChild(trajectoryButton)
+      header.appendChild(windowButton(t('minimize'), '—', () => hideWindow(sessionId)))
+      header.appendChild(windowButton(t('close'), '✕', () => closeWindow(sessionId)))
+      el.appendChild(header)
+      el.appendChild(body)
+      el.appendChild(resizer)
+      el.hidden = true
+      root.appendChild(el)
+      const win = {
+        el, body, title, header, resizer,
+        views: { chat: chatButton, trajectory: trajectoryButton },
+        rect: readWindowRect(sessionId) ?? defaultWindowRect(),
+      }
+      windows.set(sessionId, win)
+      applyWindowRect(win, clampRect(win.rect))
+      bindWindowDrag(sessionId, win)
+      paintWindowView(sessionId)
+      // Slot registration must not run inside the commit that mounted the tab
+      // body: defer it out of React's render phase.
+      window.setTimeout(syncTaskbar, 0)
+      return win
+    }
+
+    function bindWindowDrag(sessionId, win) {
+      let grab = null
+      win.el.addEventListener('pointerdown', () => raiseWindow(sessionId), true)
+      win.header.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return
+        grab = { x: event.clientX, y: event.clientY, rect: win.rect }
+        try { win.header.setPointerCapture(event.pointerId) } catch { /* older engines */ }
+        event.preventDefault()
+      })
+      win.header.addEventListener('pointermove', (event) => {
+        if (grab === null) return
+        applyWindowRect(win, clampRect({
+          x: grab.rect.x + (event.clientX - grab.x),
+          y: grab.rect.y + (event.clientY - grab.y),
+          width: grab.rect.width,
+          height: grab.rect.height,
+        }))
+      })
+      const drop = () => {
+        if (grab === null) return
+        grab = null
+        writeWindowRect(sessionId, win.rect)
+      }
+      win.header.addEventListener('pointerup', drop)
+      win.header.addEventListener('pointercancel', drop)
+
+      let sizing = null
+      win.resizer.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return
+        sizing = { x: event.clientX, y: event.clientY, rect: win.rect }
+        try { win.resizer.setPointerCapture(event.pointerId) } catch { /* older engines */ }
+        event.preventDefault()
+        event.stopPropagation()
+      })
+      win.resizer.addEventListener('pointermove', (event) => {
+        if (sizing === null) return
+        applyWindowRect(win, clampRect({
+          x: sizing.rect.x,
+          y: sizing.rect.y,
+          width: sizing.rect.width + (event.clientX - sizing.x),
+          height: sizing.rect.height + (event.clientY - sizing.y),
+        }))
+      })
+      const settled = () => {
+        if (sizing === null) return
+        sizing = null
+        writeWindowRect(sessionId, win.rect)
+      }
+      win.resizer.addEventListener('pointerup', settled)
+      win.resizer.addEventListener('pointercancel', settled)
+    }
+
+    function showWindow(sessionId) {
+      const win = ensureWindow(sessionId)
+      if (win === null) return null
+      win.el.hidden = false
+      raiseWindow(sessionId)
+      // Typing belongs to the view that just took the screen.
+      bumpContentEpoch(sessionId)
+      return win
+    }
+
+    function hideWindow(sessionId) {
+      const win = windows.get(sessionId)
+      if (win === undefined) return
+      win.el.hidden = true
+      // The window keeps its body mounted while minimised, so the middle
+      // column has to take the draft slot back for its own composer.
+      if (liveSession() === sessionId) window.setTimeout(rebindMainComposer, 60)
+    }
+
+    function destroyWindow(sessionId) {
+      const win = windows.get(sessionId)
+      if (win === undefined) return
+      windows.delete(sessionId)
+      // The live column comes home before its host leaves: a node removed with
+      // the window would be a Conversation nobody can find again.
+      if (movedColumn !== null && win.el.contains(movedColumn)) detachColumn()
+      win.el.remove()
+      window.setTimeout(syncTaskbar, 0)
+    }
+
+    /**
+     * The id of OUR tab in one Session, asked of the Session's own tab list.
+     *
+     * Reading it from the markup was how the previous build got it, and that
+     * routine could not tell one Session's tab from another's once the body had
+     * been lifted out of the strip: closing a float then closed the wrong tab.
+     */
+    function tabIdFor(sessionId) {
+      if (sessionId === null) return null
+      try {
+        const tabs = sidebarRight?.tabsIn?.(sessionId) ?? []
+        const mine = tabs.find((tab) => tab && tab.kind === CHAT_KIND)
+        return typeof mine?.id === 'string' ? mine.id : null
+      } catch (error) {
+        console.warn('[conversation-float] could not read this Session tab list:', error)
+        return null
+      }
+    }
+
+    /**
+     * Close a Conversation's float for good.
+     *
+     * The TAB goes first. 'hide' only collapses a docked column, which left the
+     * body mounted with an empty host — the next float opened into that body was
+     * blank. Closing the tab unmounts the body, and the body's own cleanup takes
+     * the window down with it.
+     */
+    function closeWindow(sessionId) {
+      const id = tabIdFor(sessionId)
+      if (id !== null) {
+        try {
+          if (typeof sidebarRight?.closeIn === 'function') sidebarRight.closeIn(sessionId, id)
+          else sidebarRight?.hide?.(id)
+        } catch (error) {
+          console.warn('[conversation-float] could not close the tab:', error)
+        }
+      }
+      // A docked tab DSH refuses to close leaves the body alive: the window must
+      // not outlive it as an orphan pointing at nothing.
+      window.setTimeout(() => {
+        if (windows.has(sessionId)) destroyWindow(sessionId)
+        if (liveSession() === sessionId) rebindMainComposer()
+      }, 0)
+    }
+
+    function dockWindowRight(sessionId) {
+      destroyWindow(sessionId)
+      const id = tabIdFor(sessionId)
+      if (id !== null) {
+        try { sidebarRight?.hide?.(id) } catch { /* already gone */ }
+      }
+      try {
+        sidebarRight?.openResource(CHAT_ADDRESS, { kind: CHAT_KIND, destination: 'sidebar' })
+      } catch (error) {
+        console.warn('[conversation-float] could not dock the conversation:', error)
+      }
+    }
+
+    /* ------------------------------------------------------- the taskbar */
+
+    /** sessionId -> disposers for its sidebar row and the panel entry behind it. */
+    const taskRows = new Map()
+
+    /**
+     * The left sidebar is the taskbar: one row per open window, named after its
+     * Conversation. The row is a panel row, so it needs a main-panel entry to
+     * select; that entry shows the window and hands the centre back.
+     */
+    function syncTaskbar() {
+      if (ctxRef === null) return
+      for (const [sessionId] of windows) {
+        if (taskRows.has(sessionId)) continue
+        const rowId = 'conversation-window:' + sessionId
+        const label = sessionTitle(sessionId) ?? t('floatTitle')
+        try {
+          const disposePanel = ctxRef.slots.register({ name: 'main', key: rowId, locale: NS }, makeWindowPanel(sessionId))
+          const disposeRow = ctxRef.slots.register(
+            { name: 'sidebar.panellist', id: rowId, order: 20, label: () => label },
+            DockIcon,
+          )
+          taskRows.set(sessionId, [disposePanel, disposeRow])
+        } catch (error) {
+          console.warn('[conversation-float] could not register the taskbar row:', error)
+        }
+      }
+      for (const [sessionId, disposers] of [...taskRows]) {
+        if (windows.has(sessionId)) continue
+        taskRows.delete(sessionId)
+        for (const off of disposers) {
+          try { off() } catch { /* the slot may be gone */ }
+        }
+      }
+    }
+
+    /** Selecting a taskbar row shows that window and returns the centre. */
+    function makeWindowPanel(sessionId) {
+      return function WindowPanel() {
+        React.useEffect(() => {
+          showWindow(sessionId)
+          try {
+            layout?.selectPanel?.(null)
+          } catch (error) {
+            console.warn('[conversation-float] could not restore the conversation panel:', error)
+          }
+        }, [])
+        return null
+      }
+    }
+
     /* ---------------------------------------------------------- components */
 
     function Icon({ name, size = 16 }) {
@@ -1991,6 +2593,42 @@ window.__ModuleLoader__.load({
   -webkit-user-select: none; user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* The float window: a layer of our own, drawn above the frame's columns. */
+[data-dsh-conversation-float-window] {
+  position: fixed; z-index: 20000;
+  display: flex; flex-direction: column;
+  min-width: 320px; min-height: 240px;
+  background: var(--dsw-alias-bg-base, #fff);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(0, 0, 0, .14));
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .28);
+  overflow: hidden;
+}
+[data-dsh-conversation-float-window][hidden] { display: none; }
+[data-dsh-conversation-float-window-grip] {
+  flex: none; display: flex; align-items: center; gap: 4px;
+  height: 34px; padding: 0 6px 0 12px;
+  background: var(--dsw-alias-bg-layer-2, #f5f6f8);
+  border-bottom: 1px solid var(--dsw-alias-border-l4, rgba(0, 0, 0, .08));
+  cursor: grab; user-select: none; touch-action: none;
+  color: var(--dsw-alias-label-primary, #111);
+}
+[data-dsh-conversation-float-window-grip]:active { cursor: grabbing; }
+[data-dsh-conversation-float-window-body] {
+  flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column;
+  background: var(--dsw-alias-bg-base, #fff); overflow: hidden;
+}
+[data-dsh-conversation-float-window-body] > * { flex: 1 1 auto; min-height: 0; min-width: 0; }
+[data-dsh-conversation-float-window-resize] {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--dsw-alias-border-l3, rgba(0, 0, 0, .22)) 50%);
+}
+[data-dsh-conversation-float-hide-pane] {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 /* Everything the float hides while it is the only thing on screen. */
 [data-dsh-conversation-float-chromeless] {
   display: none !important;
@@ -2013,15 +2651,16 @@ window.__ModuleLoader__.load({
      * rest of DSH back — or hides it again.
      */
     function onEntryClick() {
-      // No float of this Conversation on screen, or one stowed in the drawer:
-      // the button brings the float back instead of toggling the window.
-      const panel = floatPanel()
-      if (panel === null || panel.hasAttribute(STOW_ATTR)) {
+      const sessionId = liveSession()
+      if (sessionId === null) return
+      const win = windows.get(sessionId)
+      if (win === undefined) {
         openFloating()
         return
       }
-      if (chromeless) revealChrome()
-      else setChromeless(true)
+      if (win.el.hidden) showWindow(sessionId)
+      else hideWindow(sessionId)
+      notifyState()
     }
 
     /**
@@ -2163,23 +2802,198 @@ window.__ModuleLoader__.load({
       return null
     }
 
-    /** The floating panel's body: it holds the live Conversation column. */
-    function SessionPanel() {
+    /**
+     * A failing side-share must not take the float down with it.
+     *
+     * The hidden native header is a nicety: when DSH refuses to render it, the
+     * window still has to open, so it is fenced off behind this boundary.
+     */
+    class FloatBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { failed: false }
+      }
+      static getDerivedStateFromError() {
+        return { failed: true }
+      }
+      componentDidCatch(error) {
+        console.warn('[conversation-float] fenced-off subtree failed:', error)
+      }
+      render() {
+        return this.state.failed ? null : this.props.children
+      }
+    }
+
+    /**
+     * The floating tab's body.
+     *
+     * ONE Conversation has ONE view. Its draft writer is a single slot
+     * (`bindDraftPersistence`): the view that mounts last takes the slot, and
+     * when that view unmounts it clears the slot while the first view — still on
+     * screen — can never bind again. The composer then accepts text that never
+     * reaches the store, which is the reported "typing does nothing" bug.
+     *
+     * So this body renders a Conversation of its own only while the live one
+     * belongs to another Session. For its own Session it hosts the LIVE middle
+     * column — the same node the middle column shows — so the composer keeps the
+     * writer it always had.
+     */
+    function SessionPanel(props) {
       const host = React.useRef(null)
+      const sessionRef = React.useRef(null)
+      /** Where the live column goes while this body hosts it. */
+      const hostEl = React.useRef(null)
+      /** The dock-kit float pane this body was last seen in. */
+      const paneRef = React.useRef(null)
+      const [portalTarget, setPortalTarget] = React.useState(null)
+      const [epoch, setEpoch] = React.useState(0)
+      /**
+       * 'column'  the live middle column lives in this body
+       * 'factory' this body renders a Conversation of a Session that is not live
+       * 'empty'   the live Conversation is on screen as the middle column
+       * null      the first layout pass has not decided yet — render NOTHING,
+       *           because a factory view that mounts and unmounts for nothing
+       *           would clear the draft slot on its way out.
+       */
+      const [mode, setMode] = React.useState(null)
+      /** True while this body sits in a dock-kit float pane and has our window. */
+      const [floating, setFloating] = React.useState(false)
+      const content = React.useMemo(() => {
+        if (typeof props.renderFactorySlot !== 'function') return null
+        try {
+          // 'embedded', not 'main': the embedded variant is the one DSH gives a
+          // Conversation that lives outside the main root. Its stylesheet keys on
+          // [data-content-phase=active] to let the message list grow and pin the
+          // composer to the bottom; as 'main' the list is squashed and the
+          // composer is pushed thousands of pixels out of the window.
+          return props.renderFactorySlot('conversation.content', { variant: 'embedded', phase: 'active', hero: false })
+        } catch (error) {
+          console.warn('[conversation-float] could not render the conversation content:', error)
+          return null
+        }
+      }, [props.renderFactorySlot])
       React.useLayoutEffect(() => {
         const container = host.current
         if (container === null) return undefined
-        attachColumn(container)
-        // Only the floating occurrence is draggable; a tab docked in the right
-        // sidebar must not arm the drop bands at all. The panel element mounts
-        // after this body does, so the tracker resolves it per pointer sequence.
-        const stop = trackPanelDrag(container)
+        const sessionId = container.closest('[data-sidebar-right-session]')?.getAttribute('data-sidebar-right-session') ?? null
+        sessionRef.current = sessionId
+        let timer = 0
+        let disposed = false
+        let seenPane = null
+        const onEpoch = (id) => {
+          if (id === sessionRef.current) setEpoch((value) => value + 1)
+        }
+        epochListeners.add(onEpoch)
+        /**
+         * DSH can move this very body between the float pane and a right-sidebar
+         * page without remounting it, so the host is decided on every pass and
+         * not once at mount.
+         */
+        const decide = () => {
+          if (disposed) return
+          const el = host.current
+          if (el === null) return
+          const pane = el.closest('[' + FLOAT_ATTR + ']')
+          const paneChanged = pane !== seenPane
+          seenPane = pane
+          paneRef.current = pane
+          let win = sessionId === null ? undefined : windows.get(sessionId)
+          if (pane !== null && sessionId !== null) {
+            let created = false
+            if (win === undefined) {
+              try {
+                win = ensureWindow(sessionId)
+                created = win !== undefined
+              } catch (error) {
+                console.warn('[conversation-float] could not lift the conversation into its window:', error)
+                win = undefined
+              }
+            }
+            if (win !== undefined) {
+              pane.setAttribute(WINDOW_HIDE_PANE_ATTR, '')
+              if (created || paneChanged) {
+                showWindow(sessionId)
+                paintWindowView(sessionId)
+              }
+            }
+            setFloating(win !== undefined)
+            setPortalTarget(win === undefined ? null : win.body)
+          } else {
+            if (win !== undefined) {
+              // The tab left the float for a sidebar page: our window has no
+              // tenant behind it any more, and a stray empty window is worse
+              // than none at all.
+              destroyWindow(sessionId)
+              win = undefined
+            }
+            setFloating(false)
+            setPortalTarget(null)
+          }
+          const mine = liveSession() === sessionId
+          const shown = pane !== null && win !== undefined ? !win.el.hidden : true
+          const target = pane !== null && win !== undefined ? win.body : el
+          hostEl.current = target
+          // A floated body always hosts the live column. A docked page hosts it
+          // too when there is a column to host — that is what puts the real
+          // header, and its Conversation/Trajectory tabs, inside the page.
+          const next = !mine
+            ? 'factory'
+            : (pane !== null ? (shown ? 'column' : 'empty') : (findColumn() !== null ? 'column' : 'factory'))
+          setMode((prev) => (prev === next ? prev : next))
+          // Never re-append a column that is already inside: that would re-size
+          // the float under the user's hand.
+          if (next === 'column' && (movedColumn === null || !target.contains(movedColumn))) {
+            try { attachColumn(target) } catch (error) {
+              console.warn('[conversation-float] could not host the live column:', error)
+            }
+          }
+        }
+        decide()
+        timer = window.setInterval(decide, 250)
         return () => {
-          stop()
-          detachColumn()
+          try {
+            disposed = true
+            if (timer !== 0) window.clearInterval(timer)
+            epochListeners.delete(onEpoch)
+            const pane = paneRef.current
+            paneRef.current = null
+            if (pane !== null) pane.removeAttribute(WINDOW_HIDE_PANE_ATTR)
+            setPortalTarget(null)
+            const gone = sessionRef.current
+            sessionRef.current = null
+            if (gone !== null) destroyWindow(gone)
+          } catch (error) {
+            console.warn('[conversation-float] window cleanup failed:', error)
+          }
         }
       }, [])
-      return h('div', { className: 'dsw-host', ref: host, [BODY_ATTR]: '' }, h(Styles))
+      // Hosting the live column replaces the factory view: hand it back the
+      // moment this Conversation stops being the one on screen.
+      React.useLayoutEffect(() => {
+        if (mode !== 'column') return undefined
+        const target = hostEl.current
+        if (target === null) return undefined
+        if (movedColumn === null || !target.contains(movedColumn)) attachColumn(target)
+        return () => {
+          // Only take the column home while THIS body still holds it: a page
+          // that has already adopted it must not lose it to a window teardown.
+          if (movedColumn !== null && target.contains(movedColumn)) detachColumn()
+        }
+      }, [mode, portalTarget, floating])
+      const hostProps = { className: 'dsw-host', ref: host, [BODY_ATTR]: '' }
+      let body = null
+      // A body only ever renders a Conversation of its OWN when that
+      // Conversation is not the live one — hosting the live column replaces it.
+      if (mode === 'factory') {
+        if (floating) {
+          if (portalTarget !== null) {
+            body = ReactDOM.createPortal(h('div', { key: epoch, style: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%' } }, content), portalTarget)
+          }
+        } else {
+          body = content
+        }
+      }
+      return h('div', hostProps, h(Styles), body)
     }
 
     /**
@@ -2226,6 +3040,9 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale'],
       apply(ctx) {
         ctxRef = ctx
+        // Build marker: lets a probe tell a re-imported client.js from the copy
+        // the host still holds in memory (a page refresh does NOT reload it).
+        try { window.__dshFloatBuild = 'columnmode-13' } catch { /* no window yet */ }
         ctx.effect(() => {
           try {
             return ctx.locale.register(NS, Object.fromEntries(LOCALES.map((id) => [id, { title: COPY[id].floatTitle, description: COPY[id].description }])))
@@ -2256,7 +3073,10 @@ window.__ModuleLoader__.load({
         register('sidebar.panellist.actions', 'conversation-float-stow', MoveLeftRow, { order: 100 })
         register('sidebar.right.tab.guide.actions', 'conversation-float-move', MoveRightRow, { order: 100 })
 
-        ctx.effect(() => watchColumn())
+        // The column watcher belonged to the build that borrowed the middle
+        // column. Each window now owns its Conversation outright, so there is
+        // no column to chase.
+        void watchColumn
 
         ctx.effect(() => {
           window.addEventListener('keydown', escapeOnKey, true)
@@ -2351,22 +3171,33 @@ window.__ModuleLoader__.load({
         ctx.effect(() =>
           ctx.inject(['sidebarRightTabs', 'sidebarRight'], (sub) => {
             sidebarRight = sub.sidebarRight ?? null
+            // Each registration is fenced on its own: one refused registration
+            // used to take the tab TYPE down with it, and a float that cannot
+            // claim its tab cannot open at all.
+            sub.effect(() => {
+              try {
+                return sub.sidebarRightTabs.register({
+                  id: CHAT_ID,
+                  kind: CHAT_KIND,
+                  title: () => t('conversation'),
+                  keepMounted: true,
+                })
+              } catch (error) {
+                window.__dshFloatError = 'tab-type: ' + String(error && (error.stack || error))
+                console.warn('[conversation-float] tab type refused:', error)
+                return () => {}
+              }
+            })
             sub.effect(() =>
-              sub.sidebarRightTabs.register({
-                id: CHAT_ID,
-                kind: CHAT_KIND,
-                title: () => t('conversation'),
-                // The body hosts the live Conversation column. DSH unmounts an
-                // unretained body on every tab switch, and that unmount is what
-                // handed the column back to the middle column. Retaining the
-                // body keeps the column where the user docked it.
-                keepMounted: true,
+              sub.slots.inject('sidebar.right.pane.tab', () => {
+                try {
+                  return sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS }, SessionPanel)
+                } catch (error) {
+                  window.__dshFloatError = 'body: ' + String(error && (error.stack || error))
+                  console.warn('[conversation-float] tab body refused:', error)
+                  return () => {}
+                }
               }),
-            )
-            sub.effect(() =>
-              sub.slots.inject('sidebar.right.pane.tab', () =>
-                sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS }, SessionPanel),
-              ),
             )
             return () => {
               sidebarRight = null
@@ -2384,6 +3215,13 @@ window.__ModuleLoader__.load({
           open: openFloating,
           findColumn,
           bands,
+          /** Test harness: the same moves the drag bands and the menus make. */
+          moveRight: () => drop('right'),
+          moveCentre: () => drop('centre'),
+          /** Switch the page the Conversation shows (chat / trajectory). */
+          switchView: (id) => switchConversationView(liveSession(), id),
+          /** Probe: float the docked tab through the dock kit's own intent. */
+          floatTab: () => floatExistingTab(),
           get moved() {
             return movedColumn !== null
           },
@@ -2395,6 +3233,22 @@ window.__ModuleLoader__.load({
             return { saved: savedChrome, touched: touchedChrome, chromeless, hiddenAt: holdOffUntil }
           },
         }
+        ctx.effect(() => {
+          window.addEventListener('resize', reclampWindows)
+          return () => window.removeEventListener('resize', reclampWindows)
+        })
+
+        // The header's selected page is DSH's, not ours: follow it while a
+        // window is on screen so the chips never claim the wrong page.
+        ctx.effect(() => {
+          const timer = window.setInterval(() => {
+            for (const [sessionId, win] of windows) {
+              if (!win.el.hidden) paintWindowView(sessionId)
+            }
+          }, 1000)
+          return () => window.clearInterval(timer)
+        })
+
         ctx.effect(() => () => {
           hidePreview()
           unstowFloat()
