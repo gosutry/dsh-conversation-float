@@ -26,11 +26,11 @@ The three bands are the window's real columns: **left sidebar** (frame column 0,
 
 | Drop | After release |
 | --- | --- |
-| **Left** | The float is **stowed in the left sidebar drawer**: it is not closed, only invisible, so the middle column stays empty; the left sidebar grows a *Conversation float* row that brings it back |
+| **Left** | The float is **stowed in the left sidebar drawer**: it is not closed, only invisible, so the middle column stays empty; the left sidebar grows a row **named after that Conversation** that brings it back |
 | **Centre** | The float closes and the conversation returns to the middle column |
 | **Right** | The conversation docks as a **page in the right sidebar** — a native DSH tab with its own *Return to sidebar* and close |
 
-The left-sidebar row exists only after a float has actually been put there; before that the left sidebar stays empty and no permanent entry is added.
+The left-sidebar row exists only after a float has actually been put there; before that the left sidebar stays empty and no permanent entry is added. The row carries the stowed Conversation's title — not the plugin's name — and switching Conversations leaves that title alone: pressing the row returns to *that* Conversation and puts its float back on screen.
 
 **Or skip the drag.** The left sidebar's *More* menu carries **Stow the conversation here**, and the guide's *More tools* card in the right sidebar carries **Move the conversation here**. Both are ordinary DSH menu rows below the shipped ones, and each hides itself once the conversation is already where it would send it.
 
@@ -49,10 +49,15 @@ Each animation frame does at most one measurement; the three bands are measured 
 
 - A conversation has exactly one host: the left-sidebar row is an **entry**, never a second live copy of the conversation.
 - The float belongs to the Session that opened it: switching to another Session hands the Conversation back to that Session's middle column (or to its own float, if that Session has one), and switching back brings this Session's float back.
-- The left-sidebar row stays for as long as any Conversation is stowed, whichever Session that is. Pressing it floats the Conversation you are looking at — or brings the stowed one back when that is the same Conversation. Returning to a stowed Conversation shows the drawer state again: empty middle, row in the sidebar.
+- The left-sidebar row is named after the Conversation that was stowed and keeps that name while the window looks at other Conversations. Pressing it switches to that Conversation and un-hides its float; it never floats whichever Conversation happens to be on screen.
+- The drawer holds **one** Conversation. Stowing another replaces the resident one: the replaced float is released back to being an ordinary float (losing only the drawer marker), so the left sidebar never grows a second row.
 - Taking the float back out of the drawer puts it back **where it was stowed** (possibly over the left sidebar); it does not recentre.
 - This is a float inside the DSH window, not a separate OS window.
 - Restart DSH and the drawer state is gone; the conversation returns to the middle column.
+
+## Moving the float
+
+The float is moved by DSH's own drag. While a hand is on the panel the plugin applies no seat of its own — re-applying the remembered rectangle mid-drag is what used to snap the float back on the first movement.
 
 ## Install
 
@@ -66,7 +71,7 @@ npm i dsh-conversation-float
 
 Then register it in the **profile's `package.json`** — both steps are required:
 
-1. add `"dsh-conversation-float": "^0.1.3"` to `dependencies`
+1. add `"dsh-conversation-float": "^0.1.4"` to `dependencies`
 2. add `"dsh-conversation-float"` to `dsh.profile.bundles` — only a registered bundle shows up in the plugin list and can be toggled
 
 ### From source

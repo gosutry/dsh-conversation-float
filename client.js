@@ -187,6 +187,8 @@ window.__ModuleLoader__.load({
     const CHAT_ADDRESS = 'dsh-resource://conversation-float'
     /** The left sidebar row, and the main-panel key it addresses. */
     const DOCK_ROW_ID = 'conversation-float'
+    /** Marks that row's own glyph, so a Conversation named like a shipped row is not mistaken for it. */
+    const ROW_MARK_ATTR = 'data-dsh-conversation-float-row'
     /** How long a band must be held before it draws and before it can land. */
     const DWELL_MS = 1200
     /** The dock kit's own marker for a floating panel. */
@@ -233,12 +235,32 @@ window.__ModuleLoader__.load({
     const FORCE_SETTLE_MS = 1200
     /** The last time the user pressed a key or a mouse button, in ms. */
     let gestureAt = 0
+    /**
+     * Whether the user's hand is currently on a float. The dock kit moves the
+     * panel on its own drag; a seat applied from here during that drag would
+     * snap it back to where the plugin last put it.
+     */
+    let draggingFloat = false
+    /** Press position of that drag, until it moves past the slop. */
+    let floatGrab = null
     /** While the plugin moves the columns itself, changes are not the user's. */
     let holdOffUntil = 0
     /** Set while docking to the right sidebar: the column is not going home. */
     let dockingRight = false
     /** Set when the drawer action is waiting for the float that carries the column. */
     let pendingStow = false
+    /**
+     * The Conversation whose float is stowed in the left drawer, or null. The
+     * row carries this Conversation's name and pressing it returns there, so
+     * switching Conversations must repoint neither.
+     */
+    let stowedSession = null
+    /** The label the drawer row was registered with; a different one re-registers. */
+    let dockLabel = null
+    /** The Session list projection, when the Client exposes it. */
+    let sessions = null
+    /** Session navigation, used by the drawer row. */
+    let uiWorkspace = null
     /** Set while the float is being reopened from the drawer. */
     let suspendRestore = false
     /** Disposer of the `sidebar.panellist` row, while it is registered. */
@@ -344,6 +366,9 @@ window.__ModuleLoader__.load({
      * The pane id is the float element's own `data-dockkit-float` value.
      */
     function sizeFloat() {
+      // Never move a panel the user has their hand on: the seat is a starting
+      // place, and re-applying it mid-drag yanks the float out from under them.
+      if (draggingFloat) return
       const panel = floatPanel()
       if (panel === null) return
       const paneId = panel.getAttribute(FLOAT_ATTR) ?? document.querySelector(`[${FLOAT_ATTR}]`)?.getAttribute(FLOAT_ATTR)
@@ -1053,6 +1078,52 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Note a hand on a float. DSH's dock kit moves the panel itself; from the
+     * first real movement this plugin must stop re-applying the seat, or the
+     * float is pulled back to where the plugin last put it.
+     */
+    function trackFloatGrab() {
+      const press = (event) => {
+        if (event.button !== undefined && event.button !== 0) return
+        const target = event.target
+        if (!(target instanceof Element)) return
+        if (target.closest(`[${FLOAT_ATTR}]`) === null) return
+        if (movedColumn !== null && movedColumn.contains(target)) return
+        floatGrab = { x: event.clientX, y: event.clientY }
+      }
+      const move = (event) => {
+        if (floatGrab === null) return
+        const dx = event.clientX - floatGrab.x
+        const dy = event.clientY - floatGrab.y
+        // A press that never moves is a click on the float's chrome, not a drag.
+        if (dx * dx + dy * dy > 36) draggingFloat = true
+      }
+      const release = () => {
+        floatGrab = null
+        if (!draggingFloat) return
+        // Let the dock kit finish its own drop before a seat may be applied.
+        window.setTimeout(() => {
+          if (floatGrab === null) draggingFloat = false
+        }, 300)
+      }
+      const pairs = [
+        ['pointerdown', press],
+        ['mousedown', press],
+        ['pointermove', move],
+        ['mousemove', move],
+        ['pointerup', release],
+        ['mouseup', release],
+        ['pointercancel', release],
+      ]
+      for (const [name, handler] of pairs) window.addEventListener(name, handler, true)
+      window.addEventListener('blur', release)
+      return () => {
+        for (const [name, handler] of pairs) window.removeEventListener(name, handler, true)
+        window.removeEventListener('blur', release)
+      }
+    }
+
+    /**
      * Remember the sidebars as they were before the float forced them open.
      * The capture happens once, before the plugin touches anything, and is
      * never refreshed while the float is up: a later sample would record the
@@ -1191,6 +1262,8 @@ window.__ModuleLoader__.load({
      * once the float already sits where the settled room puts it.
      */
     function settleFloatSeat(attempt = 0) {
+      // The float is already readable at the size asked for; a hand on it wins.
+      if (draggingFloat) return
       const panel = floatPanel()
       if (panel !== null) {
         const size = floatSize()
@@ -1208,6 +1281,7 @@ window.__ModuleLoader__.load({
       const stowed = stowedFloat()
       if (stowed !== null) {
         stowed.removeAttribute(STOW_ATTR)
+        if (floatOwnerSession(stowed) === stowedSession) stowedSession = null
         syncDrawerRow()
         notifyState()
         // The live column returns to this float on the next watcher pass; the
@@ -1248,11 +1322,48 @@ window.__ModuleLoader__.load({
       return document.querySelector(`[${STOW_ATTR}]`) !== null
     }
 
-    /** The row lives while a stowed float exists; it goes when the last one does. */
+    /** The stored title the row promises: the stowed Conversation's own name. */
+    function sessionTitle(id) {
+      if (id === null) return null
+      try {
+        const title = sessions?.list?.getSnapshot?.()?.byId?.[id]?.title
+        return typeof title === 'string' && title.trim() !== '' ? title.trim() : null
+      } catch {
+        return null
+      }
+    }
+
+    /** What the drawer row says: the stowed Conversation, else the plugin's name. */
+    function dockRowLabel() {
+      return sessionTitle(stowedSession ?? stowedOwner()) ?? t('floatTitle')
+    }
+
+    /**
+     * The Conversation a stowed float belongs to, read from the panel itself so
+     * that a marker left over from an earlier run still names someone.
+     */
+    function stowedOwner() {
+      const el = document.querySelector(`[${STOW_ATTR}]`)
+      if (el === null) return null
+      return floatOwnerSession(el) ?? liveSession()
+    }
+
+    /**
+     * The row lives while a stowed float exists, and it is named after that
+     * Conversation. It stays put when the window switches Sessions: the row is
+     * the way back to the stowed one, never a view of the current one.
+     */
     function syncDrawerRow() {
-      const any = anyStowed()
-      if (any === dockedLeft) return
-      dockedLeft = any
+      dockedLeft = anyStowed()
+      if (!dockedLeft) {
+        stowedSession = null
+        syncDockRow()
+        return
+      }
+      if (stowedSession === null) stowedSession = stowedOwner()
+      // One box, never a pile: a state left by an earlier build (several
+      // markers at once) is pruned down to the row's own Conversation.
+      if (document.querySelectorAll(`[${STOW_ATTR}]`).length > 1) releaseStowedExcept(stowedSession)
       syncDockRow()
     }
 
@@ -1263,13 +1374,13 @@ window.__ModuleLoader__.load({
      * Session's tab into another would hand the wrong Conversation to the float.
      */
     function floatTabId() {
-      const showing = liveSession()
+      const sessionId = liveSession()
       for (const tab of document.querySelectorAll('[data-sidebar-right-tab]')) {
         const id = tab.getAttribute('data-sidebar-right-tab')
         if (id === null) continue
         const owner = tab.closest('[data-sidebar-right-session]')
         const ownerSid = owner === null ? null : owner.getAttribute('data-sidebar-right-session')
-        if (showing !== null && ownerSid !== null && ownerSid !== showing) continue
+        if (sessionId !== null && ownerSid !== null && ownerSid !== sessionId) continue
         if (tab.querySelector(`[${BODY_ATTR}]`) === null) continue
         return id
       }
@@ -1341,7 +1452,15 @@ window.__ModuleLoader__.load({
       return 'center'
     }
 
-    const ZONE_LABEL = { left: t('stow'), center: t('center'), right: t('dock') }
+    /**
+     * The band's caption, read at draw time. It used to be a table built once at
+     * load: a language switch then left the preview saying the old words.
+     */
+    function zoneLabel(zone) {
+      if (zone === 'left') return t('stow')
+      if (zone === 'right') return t('dock')
+      return t('center')
+    }
 
     function previewRect(zone, band) {
       if (zone === 'left') return [0, 0, band.left, band.height]
@@ -1371,7 +1490,7 @@ window.__ModuleLoader__.load({
       preview.el.style.transform = `translate3d(${left}px, ${top}px, 0)`
       preview.el.style.width = `${width}px`
       preview.el.style.height = `${height}px`
-      preview.label.textContent = ZONE_LABEL[zone] ?? ''
+      preview.label.textContent = zoneLabel(zone)
     }
 
     function hidePreview() {
@@ -1412,9 +1531,36 @@ window.__ModuleLoader__.load({
     function stowFloat() {
       const el = floatPanel()
       if (el === null) return false
+      const owner = floatOwnerSession(el) ?? liveSession()
+      // The left drawer holds exactly one Conversation: stowing a new one
+      // replaces the resident, whose float is closed so it goes back to its
+      // own place instead of lingering as an unreachable hidden panel.
+      releaseStowedExcept(owner)
       el.setAttribute(STOW_ATTR, '')
+      // The row is this Conversation's way back: record who was stowed before
+      // the marker is read back, or a switch would re-point the row later.
+      stowedSession = owner
       syncDrawerRow()
       return true
+    }
+
+    /** Close every stowed float of a Conversation other than `keep`. */
+    function releaseStowedExcept(keep) {
+      for (const el of [...document.querySelectorAll(`[${STOW_ATTR}]`)]) {
+        const owner = floatOwnerSession(el)
+        if (owner !== null && owner === keep) continue
+        releaseStowed(el)
+      }
+    }
+
+    /**
+     * Take one float out of the drawer: it goes back to being an ordinary
+     * float, exactly the state it had before it was stowed. It is not closed —
+     * closing a Session's float unmounts its body, and that body's cleanup
+     * would hand the live Conversation column home with it.
+     */
+    function releaseStowed(el) {
+      el.removeAttribute(STOW_ATTR)
     }
 
     /**
@@ -1453,6 +1599,7 @@ window.__ModuleLoader__.load({
 
     function unstowFloat() {
       for (const el of document.querySelectorAll(`[${STOW_ATTR}]`)) el.removeAttribute(STOW_ATTR)
+      stowedSession = null
       syncDrawerRow()
     }
 
@@ -1465,7 +1612,10 @@ window.__ModuleLoader__.load({
         savedChrome = null
         touchedChrome = null
         const docked = floatPanel()
-        if (docked !== null) docked.removeAttribute(STOW_ATTR)
+        if (docked !== null) {
+          docked.removeAttribute(STOW_ATTR)
+          if (floatOwnerSession(docked) === stowedSession) stowedSession = null
+        }
         syncDrawerRow()
         try {
           sidebarRight?.openResource(CHAT_ADDRESS, { kind: CHAT_KIND, destination: 'sidebar' })
@@ -1738,24 +1888,37 @@ window.__ModuleLoader__.load({
     /* ----------------------------------------------------------- the drawer */
 
     function syncDockRow() {
-      if (dockedLeft && dockRow === null) {
-        try {
-          dockRow = ctxRef.slots.register(
-            { name: 'sidebar.panellist', id: DOCK_ROW_ID, order: 20, label: () => t('floatTitle') },
-            DockIcon,
-          )
-        } catch (error) {
-          console.warn('[conversation-float] could not register the sidebar row:', error)
-          dockRow = null
-        }
-      } else if (!dockedLeft && dockRow !== null) {
-        try {
-          dockRow()
-        } catch {
-          /* already disposed with the slot */
-        }
+      if (!dockedLeft) {
+        disposeDockRow()
+        dockLabel = null
+        return
+      }
+      // The sidebar resolves a row's label once, when it registers: a row that
+      // must say a different Conversation's name is re-registered, never
+      // rewritten under the sidebar's feet.
+      const label = dockRowLabel()
+      if (dockRow !== null && label === dockLabel) return
+      disposeDockRow()
+      dockLabel = label
+      try {
+        dockRow = ctxRef.slots.register(
+          { name: 'sidebar.panellist', id: DOCK_ROW_ID, order: 20, label: () => dockLabel },
+          DockIcon,
+        )
+      } catch (error) {
+        console.warn('[conversation-float] could not register the sidebar row:', error)
         dockRow = null
       }
+    }
+
+    function disposeDockRow() {
+      if (dockRow === null) return
+      try {
+        dockRow()
+      } catch {
+        /* already disposed with the slot */
+      }
+      dockRow = null
     }
 
     let ctxRef = null
@@ -1783,11 +1946,14 @@ window.__ModuleLoader__.load({
     const CSS = `
 .dsw-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px;
+  /* Same box as the header's own ghost buttons: 28x28, 8px corner. */
+  width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
   background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer;
   transition: background .12s ease, color .12s ease;
 }
-.dsw-icon:hover { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+/* Same hover surface as the Conversation header's own ghost buttons — a
+   filled layer that is visible on light backgrounds too. */
+.dsw-icon:hover { background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-layer-2)); color: var(--dsw-alias-label-primary); }
 /* The menu row used only when the host carries no MenuItemButton primitive. */
 .dsw-menu-row {
   display: flex; align-items: center; width: 100%; min-height: 32px;
@@ -1862,20 +2028,88 @@ window.__ModuleLoader__.load({
      * The drawer row is DSH's own panel button: pressing it would select the
      * plugin's main-panel entry, which takes the Conversation down for a commit
      * — and the dock kit refuses to open a float while a page owns the panel.
-     * Take the press in the capture phase instead: the row means "bring the
-     * Conversation back", never "open a page".
+     * Take the press in the capture phase instead: the row means "return to the
+     * stowed Conversation", never "open a page".
      */
     function drawerRowPress(event) {
       const target = event.target
       if (!(target instanceof Element)) return
       const button = target.closest('button')
       if (button === null) return
-      if (button.getAttribute('aria-label') !== t('floatTitle')) return
+      // The row carries the stowed Conversation's own name, which may collide
+      // with a shipped row's name: the glyph we render is what tells it apart.
+      if (button.querySelector(`[${ROW_MARK_ATTR}]`) === null) return
+      if (button.getAttribute('aria-label') !== (dockLabel ?? dockRowLabel())) return
       const drawer = frameSidebar()
       if (drawer === null || !drawer.contains(button)) return
       event.preventDefault()
       event.stopPropagation()
-      openFloating()
+      bringStowedBack()
+    }
+
+    /**
+     * The row's promise: show that Conversation again, with its float back on
+     * screen. The window may be looking at another Conversation — the marker is
+     * shared, the panels are not — so the row switches to the stowed one first.
+     * Its float is already mounted in the right column and only hidden, so once
+     * the switch lands it just has to be un-hidden.
+     */
+    function bringStowedBack() {
+      const id = stowedSession ?? stowedOwner()
+      if (id === null) {
+        openFloating()
+        return
+      }
+      if (liveSession() === id) {
+        revealStowed(id)
+        return
+      }
+      try {
+        uiWorkspace?.openSession?.(id)
+      } catch (error) {
+        console.warn('[conversation-float] could not return to the stowed Conversation:', error)
+        return
+      }
+      awaitStowedSession(id, 0)
+    }
+
+    /** Wait for the switch to land, then reveal the float; give up at ~3s. */
+    function awaitStowedSession(id, attempt) {
+      if (liveSession() === id) {
+        revealStowed(id)
+        return
+      }
+      if (attempt >= 60) {
+        console.warn('[conversation-float] the stowed Conversation did not open; the row stays')
+        return
+      }
+      window.setTimeout(() => awaitStowedSession(id, attempt + 1), 50)
+    }
+
+    /** Un-hide the stowed float of `id` and keep the column that hosts it open. */
+    function revealStowed(id) {
+      const el = stowedFloatOf(id)
+      if (el !== null) el.removeAttribute(STOW_ATTR)
+      stowedSession = null
+      syncDrawerRow()
+      // The float lives in the right column: a collapsed one has nowhere to put
+      // it, so the same expansion an open does applies here.
+      try {
+        if (sidebarRight !== null && sidebarRight.isExpanded?.() === false) sidebarRight.toggleExpanded?.()
+      } catch (error) {
+        console.warn('[conversation-float] could not expand the right sidebar:', error)
+      }
+      notifyState()
+      sizeFloat()
+      settleFloatSeat()
+    }
+
+    /** The stowed float belonging to `id`, whichever Session is on screen. */
+    function stowedFloatOf(id) {
+      for (const el of document.querySelectorAll(`[${STOW_ATTR}]`)) {
+        if (floatOwnerSession(el) === id) return el
+      }
+      return null
     }
 
     /** Escape always brings DSH back: the way out of a hidden window. */
@@ -1909,7 +2143,7 @@ window.__ModuleLoader__.load({
 
     /** The left sidebar row's glyph. The row itself is owned by the sidebar. */
     function DockIcon({ size = 16 }) {
-      return h(Icon, { name: 'window', size })
+      return h('span', { [ROW_MARK_ATTR]: '', style: { display: 'contents' } }, h(Icon, { name: 'window', size }))
     }
 
     /**
@@ -2000,6 +2234,15 @@ window.__ModuleLoader__.load({
           }
         })
 
+        // A language switch happens while the window is open: the entry's own
+        // caption and an outline that is already drawn follow the new table.
+        ctx.effect(() =>
+          ctx.locale.subscribe(() => {
+            notifyState()
+            if (preview !== null && preview.zone !== null) preview.label.textContent = zoneLabel(preview.zone)
+          }),
+        )
+
         const register = (slot, id, component, options = {}) =>
           ctx.effect(() =>
             ctx.slots.inject(slot, () =>
@@ -2023,6 +2266,9 @@ window.__ModuleLoader__.load({
             document.removeEventListener('click', drawerRowPress, true)
           }
         })
+
+        // A hand on a float outranks any seat this plugin remembered.
+        ctx.effect(() => trackFloatGrab())
 
         // A press or a key is the only evidence that a column moved by the
         // user's hand rather than by DSH re-railing it.
@@ -2067,6 +2313,36 @@ window.__ModuleLoader__.load({
             layout = sub.layout ?? null
             return () => {
               layout = null
+            }
+          })
+          return dispose
+        })
+
+        // The drawer row is named after the Conversation that was stowed and
+        // returns to it: the Session list supplies the name, workspace
+        // navigation re-opens the Conversation.
+        ctx.effect(() => {
+          const dispose = ctx.inject(['sessions', 'uiWorkspace'], (sub) => {
+            sessions = sub.sessions ?? null
+            uiWorkspace = sub.uiWorkspace ?? null
+            let off = null
+            try {
+              if (typeof sessions?.list?.subscribe === 'function') {
+                off = sessions.list.subscribe(() => {
+                  if (dockedLeft) syncDrawerRow()
+                })
+              }
+            } catch (error) {
+              console.warn('[conversation-float] could not follow the Session list:', error)
+            }
+            return () => {
+              try {
+                off?.()
+              } catch {
+                /* the projection is already gone */
+              }
+              sessions = null
+              uiWorkspace = null
             }
           })
           return dispose
