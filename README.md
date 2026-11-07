@@ -10,13 +10,13 @@ The float is **DSH's own** — the dock kit's floating panel, the same one the r
 
 **Entry**: the small window icon at the right of the session title bar (*Conversation float*).
 
-One click opens the float and the rest of the DSH chrome steps aside; the same button then brings DSH back, so it is one toggle. Closing the float, stowing it in the left sidebar or docking it into the right sidebar brings the chrome back on its own.
+One click opens the float **with the rest of DSH still on screen**: both sidebars open, and the float sits centred in the room they leave. The *same* button then hides the DSH interface and leaves the float alone — its tooltip reads *Hide DSH* before that press and *Show DSH* while hidden — and the press after that brings the interface back. Closing the float, stowing it in the left sidebar or docking it into the right sidebar hands the sidebars back on its own.
 
 The float **opens large** (about 920×711, scaled to the window) by calling the dock kit's own `resizeFloat` intent — `sidebarRight.require()` → `actions.resizeFloat(sessionId, paneId, rect)`, with `paneId` read from `data-dockkit-float` on the float. It only grows a float; one you already enlarged is never shrunk back.
 
 A collapsed right sidebar is **expanded before** the float opens, so "stow back into the sidebar" has somewhere to land, and a collapsed left sidebar is expanded too — collapse is detected by measuring width, so a narrow window never gets a collapse flag written.
 
-**Closing the float and returning the conversation to the middle column restores the sidebars exactly as they were before it opened.** If you touched a sidebar **yourself** while the float was open, that last setting wins. "Yourself" counts only your own press or key, in both directions: DSH narrowing the left sidebar on a small window, or a hidden sidebar being re-laid-out, does not count. The snapshot is taken once, before any sidebar is touched, and is never overwritten while the float is up.
+**Closing the float — or leaving the hidden state — puts the sidebars back the way the window had them.** If you closed or opened a sidebar **yourself** while the float was open, that last arrangement is what comes back, and it is what comes back even when you close the float from the hidden state: a window you pared down to the right column stays that way. "Yourself" counts only your own press on a sidebar or a key, in both directions: DSH narrowing the left sidebar on a small window, a hidden sidebar being re-laid-out, or a press inside the float itself does not count. The snapshot of the earlier window is taken once, before any sidebar is touched, and is never overwritten while the float is up.
 
 ## Drag it left, centre or right
 
@@ -32,11 +32,14 @@ The three bands are the window's real columns: **left sidebar** (frame column 0,
 
 The left-sidebar row exists only after a float has actually been put there; before that the left sidebar stays empty and no permanent entry is added.
 
+**Or skip the drag.** The left sidebar's *More* menu carries **Stow the conversation here**, and the guide's *More tools* card in the right sidebar carries **Move the conversation here**. Both are ordinary DSH menu rows below the shipped ones, and each hides itself once the conversation is already where it would send it.
+
 ## How it works (and why the conversation is not redrawn)
 
 - The conversation exists as **one DOM**: the plugin moves the column that carries it into the panel body (same document, same React root) and moves it back on close or host change; if its original seat is gone, the fallback is the middle column.
 - **Stow left** = a marker on the float's root makes it hidden (`visibility`/`opacity`); the panel is **not closed**, which is why the middle column can stay empty.
 - **Dock right** = hands the tab to the right sidebar (`openResource(..., { destination: 'sidebar' })`) and lets DSH do the move and the docking.
+- **The docked tab keeps its body**: the tab type is registered with `keepMounted`, so switching to another tab of the right sidebar leaves the conversation in that tab's body instead of handing it back to the middle column. The column follows whichever retained body is on screen while its own Session is the current one; for any other Session the middle column is the seat again, exactly as before.
 
 ## Performance
 
@@ -45,6 +48,8 @@ Each animation frame does at most one measurement; the three bands are measured 
 ## Known limits
 
 - A conversation has exactly one host: the left-sidebar row is an **entry**, never a second live copy of the conversation.
+- The float belongs to the Session that opened it: switching to another Session hands the Conversation back to that Session's middle column (or to its own float, if that Session has one), and switching back brings this Session's float back.
+- The left-sidebar row stays for as long as any Conversation is stowed, whichever Session that is. Pressing it floats the Conversation you are looking at — or brings the stowed one back when that is the same Conversation. Returning to a stowed Conversation shows the drawer state again: empty middle, row in the sidebar.
 - Taking the float back out of the drawer puts it back **where it was stowed** (possibly over the left sidebar); it does not recentre.
 - This is a float inside the DSH window, not a separate OS window.
 - Restart DSH and the drawer state is gone; the conversation returns to the middle column.
@@ -61,7 +66,7 @@ npm i dsh-conversation-float
 
 Then register it in the **profile's `package.json`** — both steps are required:
 
-1. add `"dsh-conversation-float": "^0.1.1"` to `dependencies`
+1. add `"dsh-conversation-float": "^0.1.3"` to `dependencies`
 2. add `"dsh-conversation-float"` to `dsh.profile.bundles` — only a registered bundle shows up in the plugin list and can be toggled
 
 ### From source
