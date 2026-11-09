@@ -216,6 +216,12 @@ window.__ModuleLoader__.load({
     const CHROME_ATTR = 'data-dsh-conversation-float-chromeless'
     /** Set on the one frame column this plugin has moved somewhere. */
     const COLUMN_ATTR = 'data-dsh-conversation-float-column'
+    /**
+     * Set on a body that renders a Session's own Conversation content instead of
+     * hosting the live column. Such a body shows the transcript only: the one
+     * composer belongs to the Session on screen.
+     */
+    const FACTORY_ATTR = 'data-dsh-conversation-float-factory'
 
     let sidebarRight = null
     let uiConversation = null
@@ -236,6 +242,24 @@ window.__ModuleLoader__.load({
 
     function notifyState() {
       for (const fn of stateListeners) fn()
+    }
+    /**
+     * The layout tick: every mounted float body re-decides which host it is for.
+     *
+     * This runs when something that could change the answer happens — the
+     * Session on screen changes, or the Session list does — instead of every
+     * body polling on its own clock. Independent timers were what let two floats
+     * race for the one column.
+     */
+    const layoutListeners = new Set()
+    function notifyLayout() {
+      for (const listener of [...layoutListeners]) {
+        try {
+          listener()
+        } catch (error) {
+          console.warn('[conversation-float] layout pass failed:', error)
+        }
+      }
     }
     /** Set when the hide was requested before the float finished mounting. */
     let pendingChromeless = false
@@ -470,7 +494,18 @@ window.__ModuleLoader__.load({
       if (column.contains(container)) return null
       // A retained body that takes the column over from another body keeps the
       // seat recorded first: the middle column, never the tab it came from.
-      if (!keepHome || movedFrom === null) movedFrom = { parent: column.parentNode, next: column.nextSibling }
+      if (!keepHome || movedFrom === null) {
+        const parent = column.parentNode
+        const fromOwnWindow = parent !== null && typeof parent.closest === 'function' && parent.closest(`[${WINDOW_ATTR}]`) !== null
+        if (fromOwnWindow) {
+          // Coming out of another float's window: that body can be removed at any
+          // moment, so the seat worth remembering is the frame's, never a window.
+          const seat = homeSeat(null)
+          movedFrom = seat === null ? null : { parent: seat.parent, next: seat.before }
+        } else {
+          movedFrom = { parent, next: column.nextSibling }
+        }
+      }
       movedColumn = column
       column.setAttribute(COLUMN_ATTR, '')
       column.style.width = "100%"
@@ -593,6 +628,16 @@ window.__ModuleLoader__.load({
       // a stale copy of the conversation would sit in the middle column.
       if (!column.isConnected) {
         markDetach('disconnected')
+        // ...unless nothing else shows this Conversation any more: then the node
+        // left the document with the window that hosted it, and putting it back
+        // in the frame beats a blank screen that never comes back.
+        if (document.querySelector('[data-conversation-session]') === null) {
+          const seat = homeSeat(home)
+          if (seat !== null) {
+            markDetach('rescued')
+            seat.parent.insertBefore(column, seat.before)
+          }
+        }
         return
       }
       const seat = homeSeat(home)
@@ -637,8 +682,16 @@ window.__ModuleLoader__.load({
       /** Whether the last pass saw the host suppressed by a main panel. */
       let wasSuppressed = false
       let frame = 0
+      /** The Session the last pass saw on screen. */
+      let seenSession = null
       const check = () => {
         frame = 0
+        // A Session change is the one event every body must react to.
+        const showing = liveSession()
+        if (showing !== seenSession) {
+          seenSession = showing
+          notifyLayout()
+        }
         if (movedColumn !== null && !movedColumn.isConnected) detachColumn()
         // A float belongs to one Session: the right sidebar keeps one panel per
         // Session and hides the rest. Switching Sessions leaves the column in
@@ -671,7 +724,10 @@ window.__ModuleLoader__.load({
         // The same rule for OUR windows: one may keep the live column only
         // while its own Conversation is the one on screen and it is showing.
         const inWindow = movedColumn === null ? null : movedColumn.closest(`[${WINDOW_ATTR}]`)
-        if (inWindow !== null && (inWindow.hidden || inWindow.getAttribute(WINDOW_ATTR) !== columnSession(movedColumn))) {
+        // A minimised window may keep the column: taking the Conversation out of
+        // DSH and leaving the centre empty is exactly what a float is for. Only
+        // another Conversation taking the window over sends it home.
+        if (inWindow !== null && inWindow.getAttribute(WINDOW_ATTR) !== columnSession(movedColumn)) {
           detachColumn(true)
         }
         // A page owns the main panel: hand the column back to the frame for as
@@ -737,7 +793,25 @@ window.__ModuleLoader__.load({
         if (frame !== 0) return
         frame = window.requestAnimationFrame(check)
       }
-      const observer = new MutationObserver(schedule)
+      /**
+       * The observer runs before the browser paints, so a Session change is
+       * handled in the same turn it happens — no delay, no frame of the new
+       * Conversation inside the float it must leave. The rest of the pass stays
+       * rAF-throttled: streaming messages mutate the DOM constantly.
+       */
+      const onMutation = () => {
+        try {
+          const showing = liveSession()
+          if (showing !== null && showing !== seenSession) {
+            seenSession = showing
+            notifyLayout()
+          }
+        } catch (error) {
+          console.warn('[conversation-float] session watch failed:', error)
+        }
+        schedule()
+      }
+      const observer = new MutationObserver(onMutation)
       observer.observe(document.body, { childList: true, subtree: true })
       // A safety pass: Session switches, page swaps and a torn-down body can
       // all land between two mutation batches, and a missed pass leaves the
@@ -2616,6 +2690,12 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-bg-base, #fff); overflow: hidden;
 }
 [data-dsh-conversation-float-window-body] > * { flex: 1 1 auto; min-height: 0; min-width: 0; }
+/* A body that renders its own Conversation is a transcript and nothing else.
+   Exactly one composer exists on screen — the one that travels with the live
+   column, the same way the Conversation header does — so the copies DSH builds
+   for these bodies are taken out. They used to be live input boxes whose draft
+   writer was a second claimant on the Session's single slot. */
+[data-dsh-conversation-float-factory] [data-composer-seat] { display: none !important; }
 [data-dsh-conversation-float-window-resize] {
   position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
   cursor: nwse-resize; touch-action: none;
@@ -2931,45 +3011,68 @@ window.__ModuleLoader__.load({
           if (movedColumn !== null && sessionId !== null && win !== undefined && win.body.contains(movedColumn)) {
             const held = columnSession(movedColumn)
             if (held !== null && held !== sessionId) {
+              // Only a float left on a LATER page has to put the column back on
+              // the first one; one that was already on the first page must not
+              // make the Session jump for no reason.
+              const tabsBefore = nativeViewTabs()
+              const onFirstPage = tabsBefore[0] === undefined || tabsBefore[0].getAttribute('aria-selected') === 'true'
               detachColumn(true)
-              // The column now renders whichever Session the window switched
-              // to. Put it back on the first shipped page: a Session inheriting
-              // the page the float left on (a Trajectory it has nothing for)
-              // reads as a blank page.
-              window.setTimeout(() => {
-                const first = nativeViewTabs()[0]
-                if (first === undefined) return
-                if (first.getAttribute('aria-selected') === 'true') return
-                try { first.click() } catch { /* the header may be gone */ }
-              }, 60)
+              if (!onFirstPage) {
+                window.setTimeout(() => {
+                  const first = nativeViewTabs()[0]
+                  if (first === undefined) return
+                  if (first.getAttribute('aria-selected') === 'true') return
+                  try { first.click() } catch { /* the header may be gone */ }
+                }, 0)
+              }
             }
           }
-          const mine = liveSession() === sessionId
+          // DSH is mid-render during a Session change and the Session on screen
+          // is momentarily unreadable. Flipping to "not mine" there would mount a
+          // second view of the live Conversation, and a second view takes the
+          // draft writer for good. When the answer is unknown, keep the last one.
+          const live = liveSession()
+          if (live === null) return
+          const mine = live === sessionId
           const shown = pane !== null && win !== undefined ? !win.el.hidden : true
           const target = pane !== null && win !== undefined ? win.body : el
           hostEl.current = target
           // A floated body always hosts the live column. A docked page hosts it
           // too when there is a column to host — that is what puts the real
           // header, and its Conversation/Trajectory tabs, inside the page.
+          // A minimised float KEEPS the column: the point of floating is that the
+          // Conversation leaves DSH, and a hidden window is where it lives while
+          // minimised. Only a body without a column to host renders its own view.
           const next = !mine
             ? 'factory'
-            : (pane !== null ? (shown ? 'column' : 'empty') : (findColumn() !== null ? 'column' : 'factory'))
+            : (pane !== null ? 'column' : (findColumn() !== null ? 'column' : 'factory'))
           setMode((prev) => (prev === next ? prev : next))
           // Never re-append a column that is already inside: that would re-size
           // the float under the user's hand.
           if (next === 'column' && (movedColumn === null || !target.contains(movedColumn))) {
-            try { attachColumn(target) } catch (error) {
-              console.warn('[conversation-float] could not host the live column:', error)
+            // Another float may still be holding it: that float's own pass sees a
+            // foreign column and releases it, so wait for that instead of yanking
+            // the Conversation out from under it.
+            const holder = movedColumn === null ? null : movedColumn.closest(`[${WINDOW_ATTR}]`)
+            const holderId = holder === null ? null : holder.getAttribute(WINDOW_ATTR)
+            if (holderId === null || holderId === sessionId) {
+              try { attachColumn(target) } catch (error) {
+                console.warn('[conversation-float] could not host the live column:', error)
+              }
             }
           }
         }
+        layoutListeners.add(decide)
         decide()
-        timer = window.setInterval(decide, 250)
+        // Only a slow safety net: the real trigger is notifyLayout() on a Session
+        // change, so this body no longer competes with the other floats' clocks.
+        timer = window.setInterval(decide, 2000)
         return () => {
           try {
             disposed = true
             if (timer !== 0) window.clearInterval(timer)
             epochListeners.delete(onEpoch)
+            layoutListeners.delete(decide)
             const pane = paneRef.current
             paneRef.current = null
             if (pane !== null) pane.removeAttribute(WINDOW_HIDE_PANE_ATTR)
@@ -3000,13 +3103,11 @@ window.__ModuleLoader__.load({
       // A body only ever renders a Conversation of its OWN when that
       // Conversation is not the live one — hosting the live column replaces it.
       if (mode === 'factory') {
-        if (floating) {
-          if (portalTarget !== null) {
-            body = ReactDOM.createPortal(h('div', { key: epoch, style: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%' } }, content), portalTarget)
-          }
-        } else {
-          body = content
-        }
+        // Marked, so the stylesheet can take the composer out of this body and
+        // leave the transcript. The marker rides the same node in both hosts:
+        // a dock page and a float window show the same thing.
+        const shell = h('div', { key: epoch, [FACTORY_ATTR]: '', style: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%' } }, content)
+        body = floating && portalTarget !== null ? ReactDOM.createPortal(shell, portalTarget) : shell
       }
       return h('div', hostProps, h(Styles), body)
     }
@@ -3057,7 +3158,7 @@ window.__ModuleLoader__.load({
         ctxRef = ctx
         // Build marker: lets a probe tell a re-imported client.js from the copy
         // the host still holds in memory (a page refresh does NOT reload it).
-        try { window.__dshFloatBuild = 'columnmode-13' } catch { /* no window yet */ }
+        try { window.__dshFloatBuild = 'onecomposer-1' } catch { /* no window yet */ }
         ctx.effect(() => {
           try {
             return ctx.locale.register(NS, Object.fromEntries(LOCALES.map((id) => [id, { title: COPY[id].floatTitle, description: COPY[id].description }])))
@@ -3165,6 +3266,7 @@ window.__ModuleLoader__.load({
               if (typeof sessions?.list?.subscribe === 'function') {
                 off = sessions.list.subscribe(() => {
                   if (dockedLeft) syncDrawerRow()
+                  notifyLayout()
                 })
               }
             } catch (error) {
