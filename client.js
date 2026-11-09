@@ -2306,12 +2306,8 @@ window.__ModuleLoader__.load({
       const resizer = document.createElement('div')
       resizer.setAttribute(WINDOW_RESIZE_ATTR, '')
       header.appendChild(title)
-      // The two shipped pages, and only those: a plugin that invents a
-      // Conversation view of its own must not decide what a float shows.
-      const chatButton = viewButton(t('viewChat'), () => activateWindowView(sessionId, 0))
-      const trajectoryButton = viewButton(t('viewTrajectory'), () => activateWindowView(sessionId, 1))
-      header.appendChild(chatButton)
-      header.appendChild(trajectoryButton)
+      // The title bar carries no page chips: the Conversation's own header,
+      // which travels with the column, is the only copy of that switch.
       header.appendChild(windowButton(t('minimize'), '—', () => hideWindow(sessionId)))
       header.appendChild(windowButton(t('close'), '✕', () => closeWindow(sessionId)))
       el.appendChild(header)
@@ -2321,7 +2317,7 @@ window.__ModuleLoader__.load({
       root.appendChild(el)
       const win = {
         el, body, title, header, resizer,
-        views: { chat: chatButton, trajectory: trajectoryButton },
+        views: {},
         rect: readWindowRect(sessionId) ?? defaultWindowRect(),
       }
       windows.set(sessionId, win)
@@ -2928,6 +2924,25 @@ window.__ModuleLoader__.load({
             }
             setFloating(false)
             setPortalTarget(null)
+          }
+          // A column that belongs to another Conversation must not stay in this
+          // float: switching Sessions would paint the new Conversation inside
+          // it, and the Conversation's own page would then be blank.
+          if (movedColumn !== null && sessionId !== null && win !== undefined && win.body.contains(movedColumn)) {
+            const held = columnSession(movedColumn)
+            if (held !== null && held !== sessionId) {
+              detachColumn(true)
+              // The column now renders whichever Session the window switched
+              // to. Put it back on the first shipped page: a Session inheriting
+              // the page the float left on (a Trajectory it has nothing for)
+              // reads as a blank page.
+              window.setTimeout(() => {
+                const first = nativeViewTabs()[0]
+                if (first === undefined) return
+                if (first.getAttribute('aria-selected') === 'true') return
+                try { first.click() } catch { /* the header may be gone */ }
+              }, 60)
+            }
           }
           const mine = liveSession() === sessionId
           const shown = pane !== null && win !== undefined ? !win.el.hidden : true
