@@ -261,9 +261,47 @@ window.__ModuleLoader__.load({
     const layoutListeners = new Set()
     /** Set while a pass runs: the plugin's own DOM writes must not ask for one. */
     let inLayout = false
+    /** Whether the main slot carried a page during the last pass. */
+    let lastPageOpen = false
+    /**
+     * What one layout pass has already worked out.
+     *
+     * While a page owns the main slot the Conversation column is gone, so every
+     * lookup of it degrades to a whole-document scan plus forced layout reads —
+     * and every mounted body asked three times in the same pass. One pass has
+     * one answer; anything that moves the column drops it.
+     */
+    let passMemo = null
+    /** Whether this pass moved the Conversation between hosts. */
+    let columnMovedInPass = false
+    function beginPass() {
+      passMemo = { column: null, columnKnown: false, live: null, liveKnown: false, page: false, pageKnown: false }
+      columnMovedInPass = false
+    }
+    function endPass() {
+      passMemo = null
+    }
+    /**
+     * Note that this pass moved the Conversation between hosts.
+     *
+     * A move keeps the node and the Session it shows, so the memo survives it:
+     * only forgetColumn() drops a column, and that is where the memo is cleared.
+     */
+    function noteColumnMoved() {
+      columnMovedInPass = true
+    }
     function notifyLayout() {
       if (inLayout) return
+      const pageOpen = mainPanelOpen()
+      const pageChanged = pageOpen !== lastPageOpen
+      lastPageOpen = pageOpen
+      // A page owns the main slot: the Conversation is not on screen, the column
+      // is home and every body already shows its own transcript. Nothing a pass
+      // could decide is different until the page closes — and that transition is
+      // what the flag above catches.
+      if (pageOpen && !pageChanged) return
       inLayout = true
+      beginPass()
       try {
         // Repair the host first: every body below decides from "the Session on
         // screen", and a column parked in a page the window has left answers
@@ -280,10 +318,22 @@ window.__ModuleLoader__.load({
             console.warn('[conversation-float] layout pass failed:', error)
           }
         }
+        // The pass may have moved the Conversation between hosts, and a copy that
+        // left in the same breath can take the composer's editor with it. A pass
+        // that moved nothing cannot have broken it, so the subtree query that
+        // looks for the composer stays out of the common case.
+        if (columnMovedInPass) {
+          try {
+            healComposer()
+          } catch (error) {
+            console.warn('[conversation-float] composer heal failed:', error)
+          }
+        }
+        refreshSwitchChips()
       } finally {
         inLayout = false
+        endPass()
       }
-      refreshSwitchChips()
     }
     /** Set when the hide was requested before the float finished mounting. */
     let pendingChromeless = false
@@ -326,8 +376,13 @@ window.__ModuleLoader__.load({
      * column keeps every list inside the moved subtree intact.
      */
     function findColumn() {
-      if (movedColumn !== null && movedColumn.isConnected) return movedColumn
-      return scanColumn()
+      if (passMemo !== null && passMemo.columnKnown) return passMemo.column
+      const column = movedColumn !== null && movedColumn.isConnected ? movedColumn : scanColumn()
+      if (passMemo !== null) {
+        passMemo.column = column
+        passMemo.columnKnown = true
+      }
+      return column
     }
 
     /**
@@ -537,6 +592,7 @@ window.__ModuleLoader__.load({
       column.style.minHeight = "0"
       column.style.overflow = "hidden"
       container.appendChild(column)
+      noteColumnMoved()
       const ownPanel = floatPanel()
       if (ownPanel !== null) ownPanel.setAttribute(OWN_FLOAT_ATTR, '')
       // The dock kit gives a new float its own seat; ask it — through the same
@@ -601,13 +657,158 @@ window.__ModuleLoader__.load({
      * suppresses the whole float while a page is open — would be invisible.
      */
     function mainPanelOpen() {
+      if (passMemo !== null && passMemo.pageKnown) return passMemo.page
       const slot = document.querySelector('[data-slot="main"]')
-      if (slot === null) return false
-      for (const child of slot.children) {
-        if (child.getAttribute('data-slot') === 'main.conversation') continue
-        return true
+      let open = false
+      if (slot !== null) {
+        for (const child of slot.children) {
+          if (child.getAttribute('data-slot') === 'main.conversation') continue
+          open = true
+          break
+        }
       }
-      return false
+      if (passMemo !== null) {
+        passMemo.page = open
+        passMemo.pageKnown = true
+      }
+      return open
+    }
+
+    /* ------------------------------------------------------ the live composer */
+
+    /**
+     * The Lexical editor behind a composer box, read off the box itself.
+     *
+     * The composer does not own its editable surface: `ComposerContentEditable`
+     * hands the same editor a DOM node (`editor.setRootElement(el)`) on mount
+     * and `null` on unmount, and one editor can only ever have one root. The
+     * box therefore reports the editor that renders into it, which is the only
+     * handle this plugin needs.
+     */
+    function composerEditor(box) {
+      const key = Object.keys(box).find((name) => name.startsWith('__reactFiber$'))
+      if (key === undefined) return null
+      let fiber = box[key]
+      for (let depth = 0; fiber && depth < 24; depth += 1, fiber = fiber.return) {
+        const props = fiber.memoizedProps
+        if (props && props.editor && typeof props.editor.setRootElement === 'function') return props.editor
+      }
+      return null
+    }
+
+    /**
+     * Give the composer on screen its editor back.
+     *
+     * A Session's input is one shell with one editor. Our window renders a
+     * transcript of a Session that is not the live one, and that copy mounts a
+     * composer of its own on the SAME editor; when the copy goes away it calls
+     * `setRootElement(null)`, and the composer the user is now looking at is a
+     * dead box: it keeps whatever text was left in it, typing never reaches the
+     * shell, and the draft the send button reads is the one the shell had before
+     * the switch. Nothing in DSH re-attaches it, because the surviving composer
+     * never remounted — its DOM was moved, not rendered. Re-attaching the editor
+     * is what heals it, and the shell's own document (the persisted draft) comes
+     * back with it.
+     *
+     * @returns whether the editor had to be re-attached
+     */
+    function healComposer() {
+      const column = movedColumn
+      if (column === null || !column.isConnected) return false
+      const sessionId = columnSession(column)
+      if (sessionId === null) return false
+      let changed = false
+      const seat = column.querySelector('[data-composer-seat]')
+      const box = seat === null
+        ? null
+        : [...seat.querySelectorAll('[contenteditable]')].find((el) => el.getAttribute('contenteditable') !== 'false') ?? null
+      if (box !== null) {
+        const editor = composerEditor(box)
+        if (editor !== null) {
+          let root = box
+          try {
+            root = editor.getRootElement()
+          } catch {
+            root = box
+          }
+          if (root !== box) {
+            try {
+              editor.setRootElement(box)
+              changed = true
+            } catch (error) {
+              console.warn('[conversation-float] could not re-attach the composer:', error)
+            }
+          }
+        }
+      }
+      try {
+        if (guardDraftWriter(sessionId)) changed = true
+      } catch (error) {
+        console.warn('[conversation-float] could not restore the draft writer:', error)
+      }
+      return changed
+    }
+
+    /** sessionId -> { shell, write }: the draft writer bound while this Session was live. */
+    const liveDraftWriters = new Map()
+
+    /** The Session's input shell — the one object holding its editor and draft slot. */
+    function draftShellOf(sessionId) {
+      try {
+        const conversation = typeof ctxRef?.get === 'function' ? ctxRef.get('conversation') : null
+        const shell = conversation === null || conversation === undefined
+          ? null
+          : conversation.input?.shell?.(sessionId)
+        return shell !== null && shell !== undefined && typeof shell.bindDraftPersistence === 'function' ? shell : null
+      } catch (error) {
+        return null
+      }
+    }
+
+    /**
+     * Put the Session's draft writer back after a copy cleared it.
+     *
+     * The writer is a single field on the input shell (`persistDraft`), and a
+     * cleared field is how the draft stops reaching storage while the composer
+     * still looks alive. The writer DSH bound while this Session was the one on
+     * screen is the right one: it writes the draft into the Conversation store
+     * the reload path and the send button read. It is only ever put back into an
+     * EMPTY slot — a writer DSH has bound since is never replaced, so a
+     * remounted composer keeps its own.
+     *
+     * @returns whether the slot had to be filled
+     */
+    function guardDraftWriter(sessionId) {
+      const shell = draftShellOf(sessionId)
+      if (shell === null) return false
+      const current = shell.persistDraft
+      const known = liveDraftWriters.get(sessionId)
+      if (current !== undefined && current !== null) {
+        if (known === undefined || known.shell !== shell) liveDraftWriters.set(sessionId, { shell, write: current })
+        return false
+      }
+      if (known === undefined || known.shell !== shell) return false
+      try {
+        shell.persistDraft = known.write
+      } catch (error) {
+        return false
+      }
+      return true
+    }
+
+    /**
+     * Re-attach the composer now, and again once the layout has settled.
+     *
+     * The copy that steals the editor goes away a commit after the pass that
+     * notices the Session is live again, so one attempt can land before the
+     * thief has finished leaving.
+     */
+    function healComposerSoon() {
+      const heal = () => {
+        try { healComposer() } catch (error) { console.warn('[conversation-float] composer heal failed:', error) }
+      }
+      heal()
+      for (const delay of [60, 220, 600]) window.setTimeout(heal, delay)
     }
 
     /** Where the column went on its way home (probe only, read by the tests). */
@@ -641,6 +842,7 @@ window.__ModuleLoader__.load({
       if (!keepChrome && !dockingRight && !suspendRestore) scheduleRestoreChrome()
       dockingRight = false
       if (column === null) return
+      noteColumnMoved()
       column.style.width = ''
       column.style.height = ''
       column.style.minWidth = ''
@@ -761,20 +963,24 @@ window.__ModuleLoader__.load({
       // that has left the document still answers columnSession() with the
       // Session it used to show, and that freezes every decision on a
       // Conversation the user already left.
+      if (passMemo !== null && passMemo.liveKnown) return passMemo.live
       const column = findColumn()
+      let answer = null
       const shown = column === null ? null : columnSession(column)
       if (shown !== null) {
-        lastSession = shown
-        return shown
+        answer = shown
+      } else {
+        // A docked page can be the Conversation's only home; its Session is the
+        // one on screen and the entry must still find it.
+        const docked = dockedBodySession()
+        answer = docked !== null ? docked : lastSession
       }
-      // A docked page can be the Conversation's only home; its Session is the
-      // one on screen and the entry must still find it.
-      const docked = dockedBodySession()
-      if (docked !== null) {
-        lastSession = docked
-        return docked
+      if (answer !== null) lastSession = answer
+      if (passMemo !== null) {
+        passMemo.live = answer
+        passMemo.liveKnown = true
       }
-      return lastSession
+      return answer
     }
 
     /** Set while a deferred layout pass is already queued. */
@@ -785,15 +991,18 @@ window.__ModuleLoader__.load({
      * Two frames, not one: DSH writes the current Session, then React commits the
      * column for it. A pass that runs between the two sees the old nodes.
      */
-    function kickLayout() {
+    function kickLayout(frames = 2) {
       if (kickScheduled) return
       kickScheduled = true
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          kickScheduled = false
-          notifyLayout()
-        })
-      })
+      const run = () => {
+        kickScheduled = false
+        notifyLayout()
+      }
+      // A page taking or leaving the slot swaps whole subtrees and has no Session
+      // commit to wait behind: one frame is enough there. A Session switch writes
+      // its store before React commits the column, so that one keeps the second.
+      if (frames >= 2) window.requestAnimationFrame(() => window.requestAnimationFrame(run))
+      else window.requestAnimationFrame(run)
     }
 
     /**
@@ -996,6 +1205,12 @@ window.__ModuleLoader__.load({
       column.style.minHeight = ''
       column.style.overflow = ''
       if (discardDom && column.isConnected && column.closest(`[${BODY_ATTR}]`) !== null) column.remove()
+      noteColumnMoved()
+      // The column is gone: no pass may keep answering with it.
+      if (passMemo !== null) {
+        passMemo.columnKnown = false
+        passMemo.liveKnown = false
+      }
       notifyState()
     }
 
@@ -2806,15 +3021,33 @@ window.__ModuleLoader__.load({
           const mine = live === sessionId
           const target = pane !== null && win !== undefined ? win.body : el
           hostEl.current = target
+          // A page that is not a Conversation (plugins, automations, settings)
+          // renders into the very slot the column carries. Hosting the column now
+          // would paint that page inside this window, and the window would follow
+          // the user out of the Conversation — the View tab strip turning into a
+          // plugin page's header and the composer disappearing with it. The page
+          // belongs to the middle column, so the column goes home and this body
+          // shows the transcript of its own Session instead: the same thing a
+          // window of a Session that is not the live one shows.
+          const columnNow = findColumn()
+          const page = mainPanelOpen() && (columnNow === null || columnSession(columnNow) === null)
+          if (page && movedColumn !== null && win !== undefined && win.body.contains(movedColumn)) {
+            try {
+              detachColumn(true)
+            } catch (error) {
+              console.warn('[conversation-float] could not hand the page its column:', error)
+            }
+          }
           // A floated body always hosts the live column. A docked page hosts it
           // too when there is a column to host — that is what puts the real
           // header, and its Conversation/Trajectory tabs, inside the page.
           // A minimised float KEEPS the column: the point of floating is that the
           // Conversation leaves DSH, and a hidden window is where it lives while
-          // minimised. Only a body without a column to host renders its own view.
-          const next = !mine
-            ? 'factory'
-            : (pane !== null ? 'column' : (findColumn() !== null ? 'column' : 'factory'))
+          // minimised. Only a body without a column to host renders its own view,
+          // and so does every body while a page outside the Conversation is open.
+          const next = (mine && !page)
+            ? (pane !== null ? 'column' : (findColumn() !== null ? 'column' : 'factory'))
+            : 'factory'
           setMode((prev) => (prev === next ? prev : next))
           // Never re-append a column that is already inside: that would re-size
           // the float under the user's hand.
@@ -2859,6 +3092,10 @@ window.__ModuleLoader__.load({
         const target = hostEl.current
         if (target === null) return undefined
         if (movedColumn === null || !target.contains(movedColumn)) attachColumn(target)
+        // The copy that was showing this Conversation until this commit can take
+        // the composer's editor down with it, and the composer that survives is
+        // the one the user is about to type into.
+        healComposerSoon()
         return () => {
           // Only take the column home while THIS body still holds it: a page
           // that has already adopted it must not lose it to a window teardown.
@@ -2924,7 +3161,7 @@ window.__ModuleLoader__.load({
         ctxRef = ctx
         // Build marker: lets a probe tell a re-imported client.js from the copy
         // the host still holds in memory (a page refresh does NOT reload it).
-        try { window.__dshFloatBuild = 'switch-0.2.4-c' } catch { /* no window yet */ }
+        try { window.__dshFloatBuild = 'pagealign-0.2.5-c' } catch { /* no window yet */ }
         ctx.effect(() => {
           try {
             return ctx.locale.register(NS, Object.fromEntries(LOCALES.map((id) => [id, { title: COPY[id].floatTitle, description: COPY[id].description }])))
@@ -3136,6 +3373,56 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           followSelection()
           return () => {}
+        })
+
+        // Leaving the Conversation for a page outside it (plugins, automations,
+        // settings) swaps the main slot's children and tells no service: the
+        // Session is still "selected", so neither the workspace store nor the
+        // Session list moves. Watch the slot itself, so a window stops following
+        // the user out of the Conversation in the same turn it happens instead
+        // of on the next watchdog tick.
+        ctx.effect(() => {
+          const inMain = (node) => node instanceof Element
+            && (node.hasAttribute('data-slot')
+              || node.closest('[data-slot="main"]') !== null
+              || node.querySelector('[data-slot="main"]') !== null)
+          const carries = (node) => node instanceof Element
+            && (node.hasAttribute('data-conversation-session')
+              || node.querySelector('[data-conversation-session]') !== null
+              || inMain(node))
+          // Reading the main slot's own shape is what keeps this cheap: a
+          // streaming answer mutates the transcript hundreds of times a second,
+          // and a layout pass per token would cost more than it ever buys. Only
+          // a change to WHAT the slot carries — or to whether a Conversation is
+          // drawn at all — counts, and one pass per 200ms at most.
+          const shape = () => {
+            const slot = document.querySelector('[data-slot="main"]')
+            const kinds = slot === null ? '' : [...slot.children].map((child) => child.getAttribute('data-slot') ?? child.tagName).join(',')
+            return kinds + '|' + (document.querySelector('[data-conversation-session]') === null ? 'none' : 'conversation')
+          }
+          let seen = shape()
+          let lastKick = 0
+          const observer = new MutationObserver((records) => {
+            let interesting = false
+            for (const record of records) {
+              if (record.type !== 'childList') continue
+              if (inMain(record.target)) { interesting = true; break }
+              for (const node of record.addedNodes) if (carries(node)) { interesting = true; break }
+              if (interesting) break
+              for (const node of record.removedNodes) if (carries(node)) { interesting = true; break }
+              if (interesting) break
+            }
+            if (!interesting) return
+            const now = Date.now()
+            if (now - lastKick < 200) return
+            const next = shape()
+            if (next === seen) return
+            seen = next
+            lastKick = now
+            kickLayout(1)
+          })
+          observer.observe(document.body, { childList: true, subtree: true })
+          return () => observer.disconnect()
         })
 
         // One slow pass, and only while a window is on screen. DSH changes a few

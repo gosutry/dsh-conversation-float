@@ -40,6 +40,8 @@ The left-sidebar row exists only after a float has actually been put there; befo
 - **Stow left** = a marker on the float's root makes it hidden (`visibility`/`opacity`); the panel is **not closed**, which is why the middle column can stay empty.
 - **Dock right** = hands the tab to the right sidebar (`openResource(..., { destination: 'sidebar' })`) and lets DSH do the move and the docking.
 - **The docked tab keeps its body**: the tab type is registered with `keepMounted`, so switching to another tab of the right sidebar leaves the conversation in that tab's body instead of handing it back to the middle column. The column follows whichever retained body is on screen while its own Session is the current one; for any other Session the middle column is the seat again, exactly as before.
+- **Pages outside the conversation** (plugins, automations, settings) render into the very slot the column carries. The float does not follow them: the column goes back to the middle so the page lands where it belongs, and the window shows its own Session's transcript instead — no View tab strip, no composer — until a conversation is on screen again.
+- **The composer is re-attached after every host change**. A Session has one input shell with one editor, and the editor rides one DOM root at a time; the transcript a window renders while its Session is not the live one mounts a composer on that same shell, and its unmount detaches the editor. The plugin points the editor back at the composer on screen and puts the draft writer DSH bound back into an empty slot, so the draft a window shows is the draft it sends.
 
 ## Performance
 
@@ -48,6 +50,7 @@ Each animation frame does at most one measurement; the three bands are measured 
 ## Known limits
 
 - A conversation has exactly one host: the left-sidebar row is an **entry**, never a second live copy of the conversation.
+- The View tab strip and the composer belong to the conversation on screen. A window whose Session is not the live one — and every window while a page outside the conversation is open — shows a read-only transcript.
 - The float belongs to the Session that opened it: switching to another Session hands the Conversation back to that Session's middle column (or to its own float, if that Session has one), and switching back brings this Session's float back.
 - The left-sidebar row is named after the Conversation that was stowed and keeps that name while the window looks at other Conversations. Pressing it switches to that Conversation and un-hides its float; it never floats whichever Conversation happens to be on screen.
 - The drawer holds **one** Conversation. Stowing another replaces the resident one: the replaced float is released back to being an ordinary float (losing only the drawer marker), so the left sidebar never grows a second row.
