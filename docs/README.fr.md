@@ -1,85 +1,118 @@
-# Fenêtre de conversation
+# Conversation Float
 
-**dsh-conversation-float** — sort la **vue de conversation** de son siège fixe dans DSH et en fait un panneau flottant.
-
-Le flottant est **celui de DSH** — le panneau flottant du kit d'ancrage, celui qu'utilise la barre latérale droite — et non une seconde fenêtre du navigateur : la barre des tâches n'affiche toujours qu'une seule fenêtre DSH. Il contient **la vraie vue de conversation**, la même colonne et non une copie redessinée, donc la saisie, le défilement, le passage entre Conversation et Trajectoire, le composeur, les pièces jointes et le sélecteur de persona restent natifs.
+**dsh-conversation-float** transforme la conversation DSH en une véritable fenêtre flottante à l'intérieur de DSH — pas une seconde fenêtre du système d'exploitation. La fenêtre peut rester au-dessus de l'application, être réduite dans la barre latérale gauche sous forme de ligne de barre des tâches, ou être ancrée dans la barre latérale droite. Elle garde la conversation utilisable pendant que vous ouvrez des pages de plugin, des pages d'automation et d'autres entrées de la barre latérale gauche.
 
 [English](../README.md) · [简体中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Русский](README.ru.md)
 
-## Utilisation
+## Ce que vous obtenez
 
-**Entrée** : la petite icône de fenêtre à droite de la barre de titre de la session (*Conversation float*).
+- **Un clic** depuis la petite icône de fenêtre à droite de la barre de titre de la session.
+- **La vraie conversation**, pas une copie redessinée : la saisie, le défilement, les onglets Conversation/Trajectory, le composeur, les pièces jointes et le sélecteur de persona restent natifs.
+- **Plusieurs flottants**, un par Session, chacun avec sa propre ligne dans la barre latérale gauche.
+- **Une barre des tâches qui ne fait que remonter les fenêtres** : cliquer sur une ligne de session amène ce flottant au premier plan et ne change jamais la page qui se trouve derrière.
+- **Une conversation complète sur les pages hors conversation** : ouvrir Plugins, Automations, Settings ou une autre entrée de la barre latérale gauche laisse le flottant de la conversation active à l'écran avec son en-tête, ses onglets View et son composeur. La page reste dans la colonne centrale, derrière le flottant.
+- **Un bouton d'entrée à trois états** : ouvrir le flottant, masquer le reste de DSH, ou ramener le reste de DSH.
+- **Des lignes de menu qui savent quand disparaître** : « Ranger la conversation ici » disparaît une fois la fenêtre réduite, et « Déplacer la conversation ici » disparaît une fois la conversation ancrée à droite.
 
-Un clic ouvre le flottant **avec le reste de DSH encore à l'écran** : les deux barres latérales ouvertes, le flottant centré dans l'espace qu'elles laissent. Le *même* bouton masque ensuite l'interface de DSH et ne laisse que le flottant — son info-bulle passe de *Masquer DSH* à *Afficher DSH* — et le clic suivant ramène l'interface. Fermer le flottant, le ranger dans la barre gauche ou l'ancrer à droite rend les barres latérales à leur état.
+## Ouvrir, réduire, fermer
 
-Le flottant **s'ouvre grand** (environ 920×711, ajusté à la fenêtre) en appelant l'intention `resizeFloat` du kit lui-même — `sidebarRight.require()` → `actions.resizeFloat(sessionId, paneId, rect)`, `paneId` étant lu depuis `data-dockkit-float` sur le flottant. Il ne fait qu'agrandir : un flottant déjà agrandi n'est jamais rétréci.
+Cliquez sur l'icône de fenêtre dans la barre de titre de la session. Le flottant s'ouvre en grand (environ 920×720, ajusté à la fenêtre), le reste de DSH restant visible et les deux barres latérales dans l'espace qu'il laisse.
 
-Une barre droite repliée est **dépliée avant** l'ouverture du flottant, pour que « revenir dans la barre » ait un endroit où atterrir ; une barre gauche repliée aussi — le repli se détecte en mesurant la largeur, une fenêtre étroite n'écrit donc jamais d'indicateur de repli.
+Le même bouton cycle entre trois états :
 
-**Fermer le flottant — ou quitter l'état masqué — remet les barres latérales comme la fenêtre les avait.** Si tu as fermé ou ouvert une barre **toi-même** pendant que le flottant était ouvert, c'est cette dernière disposition qui revient, y compris en fermant depuis l'état masqué : une fenêtre réduite à la colonne de droite le reste. « Toi-même » ne compte que ton appui sur une barre ou une touche, dans les deux sens ; le repli de la barre gauche par DSH sur une petite fenêtre, la re-disposition d'une barre masquée ou un clic dans le flottant lui-même ne comptent pas. L'instantané de l'état antérieur est pris une fois, avant de toucher la moindre barre, et n'est jamais écrasé tant que le flottant est ouvert.
+1. ouvrir le flottant ;
+2. masquer l'interface DSH et ne laisser que le flottant ;
+3. réafficher l'interface DSH.
 
-## Le glisser à gauche, au centre ou à droite
+Fermer le flottant, le réduire dans la barre latérale gauche ou l'ancrer dans la barre latérale droite remet les barres latérales dans la disposition capturée à l'ouverture du flottant. L'instantané est pris une seule fois et n'est pas écrasé tant que la fenêtre est affichée. Les modifications que vous apportez aux barres latérales pendant que le flottant est ouvert ne sont pas suivies.
 
-Maintiens la barre de titre du flottant pour le glisser. **Un maintien de 1,2 s** fait passer le glissement en phase de jugement ; dès lors le contour suit la bande sous le pointeur et le relâchement fait tomber le flottant dans cette bande. Le jugement commence une fois par glissement, changer de bande n'attend donc plus. Relâcher avant 1,2 s ne fait rien — pas de déplacement accidentel.
+Le bouton **—** de la fenêtre la réduit : la fenêtre disparaît, mais sa ligne de barre des tâches dans la barre latérale gauche reste. Cliquez sur cette ligne pour la faire revenir. Le bouton **✕** la ferme définitivement : la fenêtre et sa ligne disparaissent, et la conversation retourne dans la colonne centrale.
 
-Les trois bandes sont les vraies colonnes de la fenêtre : **barre gauche** (colonne 0 du cadre, actuellement 0..280), **colonne centrale** (280..680), **barre droite** (`data-rightbar-col`, 680..1097). Le contour couvre exactement le bloc où le flottant va atterrir, à la même taille.
+Pendant que DSH est masqué, **Escape** ramène l'interface.
 
-| Dépôt | Après le relâchement |
+## Déplacer la conversation
+
+Maintenez la barre de titre de la fenêtre et faites glisser. Un maintien immobile de **1,2 seconde** arme les zones de dépôt ; la barre de titre se teinte, un contour suit la zone située sous le pointeur, et le relâchement dépose la conversation à cet endroit. Relâcher avant la fin du maintien ne fait rien. Au toucher, un déplacement de plus de 10 px avant la fin du maintien conserve le geste comme un déplacement de fenêtre normal.
+
+| Déposer sur | Résultat |
 | --- | --- |
-| **Gauche** | Le flottant est **rangé dans le tiroir de la barre gauche** : il n'est pas fermé, seulement invisible, la colonne centrale reste donc vide ; la barre gauche gagne une ligne **portant le nom de cette conversation** qui le ramène |
-| **Centre** | Le flottant se ferme et la conversation revient dans la colonne centrale |
-| **Droite** | La conversation s'ancre comme **page de la barre droite** — un onglet DSH natif avec son propre *Revenir dans la barre* et sa fermeture |
+| **Barre latérale gauche** | La fenêtre est réduite dans la barre latérale gauche. Elle n'est pas fermée ; sa ligne de barre des tâches est le moyen d'y revenir. La colonne centrale reste vide. |
+| **Centre** | La fenêtre se ferme et la conversation retourne dans la colonne centrale. |
+| **Barre latérale droite** | La conversation s'ancre comme une page native dans la barre latérale droite, avec les propres contrôles de retour et de fermeture de DSH. |
 
-La ligne de la barre gauche n'existe qu'après y avoir réellement déposé un flottant ; avant cela la barre gauche reste vide et aucune entrée permanente n'est ajoutée. La ligne porte le titre de la conversation rangée — pas le nom du plugin — et changer de conversation ne change pas ce titre : l'appuyer revient à *cette* conversation et réaffiche son flottant.
+La ligne de la barre latérale gauche porte le titre de la conversation, et non le nom du plugin. Elle conserve ce titre même lorsque la fenêtre affiche d'autres conversations. Cliquer sur la ligne ne fait qu'afficher et remonter cette fenêtre ; cela ne sélectionne jamais le panneau principal du plugin et ne retire jamais une page de plugin ou d'automation.
 
-**Ou sans glisser.** Le menu *Plus* de la barre gauche contient **Ranger la conversation ici**, et la carte *Plus d'outils* de la barre droite contient **Déplacer la conversation ici**. Ce sont des lignes DSH ordinaires, sous celles fournies, et chacune se masque dès que la conversation est déjà là où elle l'enverrait.
+**Ou évitez le glisser.** Le menu *Plus* de la barre latérale gauche contient **Ranger la conversation ici**. Le guide de la barre latérale droite contient **Déplacer la conversation ici**. Chaque ligne se masque elle-même lorsque la conversation se trouve déjà à cet endroit.
 
-## Comment ça marche (et pourquoi la conversation n'est pas redessinée)
+## Pages hors de la conversation
 
-- La conversation n'existe que comme **un seul DOM** : le plugin déplace la colonne qui la porte dans le corps du panneau (même document, même racine React) et la remet en place à la fermeture ou au changement d'hôte ; si son siège d'origine a disparu, la colonne centrale sert de repli.
-- **Ranger à gauche** = un marqueur à la racine du flottant le rend invisible (`visibility`/`opacity`) ; le panneau **n'est pas fermé**, c'est pourquoi la colonne centrale peut rester vide.
-- **Ancrer à droite** = confie l'onglet à la barre droite (`openResource(..., { destination: 'sidebar' })`) et laisse DSH faire le déplacement et l'ancrage.
-- **L'onglet ancré garde son corps** : le type d'onglet est enregistré avec `keepMounted`, donc passer à un autre onglet de la barre droite laisse la conversation dans ce corps au lieu de la renvoyer dans la colonne centrale. La colonne suit le corps retenu qui est à l'écran tant que sa propre session est la session courante ; pour toute autre session, la colonne centrale redevient le siège, exactement comme avant.
+Lorsque vous ouvrez Plugins, Automations, Settings ou une autre entrée de la barre latérale gauche, la colonne de conversation revient dans la colonne centrale afin que la page puisse utiliser le cadre normal à trois colonnes. Le flottant de la Session active reste à l'écran et passe à une **conversation locale complète** : en-tête de session, onglets Conversation/Trajectory et composeur. Ce n'est pas une transcription en lecture seule.
+
+La page se trouve **derrière le flottant**. Faites glisser le flottant de côté pour travailler sur la page. Cliquer sur la ligne de barre des tâches de la Session ne fait que remonter le flottant ; la page reste ouverte et inchangée. Fermer la page, ou revenir normalement à la conversation, rend la vraie colonne de conversation au flottant.
+
+Une fenêtre pour une Session qui n'est **pas** la session active affiche toujours une transcription en lecture seule. Une conversation n'a qu'un seul composeur actif ; le composeur et les onglets View appartiennent à la Session active.
+
+## Fenêtres multiples et barre des tâches
+
+Chaque Session peut avoir un flottant. Chaque flottant obtient une ligne dans la barre latérale gauche, ordonnée comme une barre des tâches. Les lignes portent le nom de leur Session.
+
+- Cliquer sur une ligne **remonte cette fenêtre**. Cela ne change pas la Session courante et ne modifie pas le panneau principal.
+- Une fenêtre non active affiche une puce **Passer à cette conversation** lorsqu'elle est au premier plan. Cliquer dessus rend cette Session active ; la fenêtre prend alors la vraie colonne de conversation.
+- Fermer une fenêtre ne touche pas aux autres.
+- Une ligne de barre des tâches de session est une entrée, jamais une seconde copie active de la conversation.
+
+## Ancrer dans la barre latérale droite
+
+Faire glisser vers la droite, ou utiliser **Déplacer la conversation ici**, confie l'onglet à la barre latérale droite de DSH. Le type d'onglet est enregistré avec `keepMounted`, de sorte que passer à un autre onglet de la barre latérale droite laisse la conversation dans le corps de son propre onglet. La colonne suit le corps retenu qui est à l'écran tant que sa Session est active ; pour toute autre Session, la colonne centrale redevient la place.
+
+## Brouillon et composeur
+
+Une Session possède une seule enveloppe de saisie et un seul éditeur, et l'éditeur ne peut être rattaché qu'à une seule racine DOM à la fois. Lorsque la conversation se déplace entre la colonne centrale, une fenêtre et une page de la barre latérale droite, le plugin rattache à nouveau l'éditeur au composeur affiché et restaure le rédacteur de brouillon dans un emplacement vide. Le brouillon que vous voyez est le brouillon qui sera envoyé.
+
+Fermer le flottant ne clique plus sur un autre onglet View pour forcer un remontage. Le plugin répare l'éditeur directement, de sorte que la fenêtre revient à la conversation sans faire clignoter Trajectory ni aucun autre View.
 
 ## Performance
 
-Chaque image d'animation fait au plus une mesure ; les trois bandes sont mesurées une fois, à l'appui. Le contour n'est redessiné que lorsque la bande change vraiment, et se déplace par `transform`. Les versions précédentes mesuraient la mise en page et écrivaient quatre styles à chaque mouvement de souris — c'est cela, et non la logique de dépôt, qui rendait le glissement plus lourd que celui de DSH.
+Chaque image d'animation effectue au plus une mesure de mise en page. Les trois zones de dépôt sont mesurées une fois, à l'appui. Les attentes qui dépendent d'un changement appliqué par DSH sont pilotées par les images ; le plugin ne conserve **aucun intervalle** et exécute ses réparations lors des passes de mise en page que DSH provoque déjà. Le contour n'est repeint que lorsque la zone change et se déplace avec `transform`.
 
 ## Limites connues
 
-- Une conversation a exactement un hôte : la ligne de la barre gauche est une **entrée**, jamais une seconde copie vivante de la conversation.
-- Le flottant appartient à la session qui l'a ouvert : passer à une autre session rend la conversation à la colonne centrale de cette session (ou à son propre flottant, si elle en a un), et revenir fait réapparaître le flottant de cette session.
-- La ligne de la barre gauche porte le nom de la conversation rangée et le garde pendant que la fenêtre regarde d'autres conversations. L'appuyer passe à cette conversation et affiche son flottant ; elle ne fait jamais flotter la conversation affichée à l'écran.
-- Le tiroir ne contient **qu'une** conversation. En ranger une autre remplace la résidente : le flottant remplacé redevient un flottant ordinaire (il ne perd que le marqueur du tiroir), la barre gauche n'a donc jamais deux lignes.
-- Sortir le flottant du tiroir le remet **là où il a été rangé** (parfois par-dessus la barre gauche) ; il ne se recentre pas.
-- C'est un flottant dans la fenêtre DSH, pas une fenêtre système séparée.
-- Redémarre DSH et l'état du tiroir disparaît ; la conversation revient dans la colonne centrale.
-
-## Déplacer le flottant
-
-Le flottant est déplacé par le glissement propre à DSH. Tant qu'une main est sur le panneau, le plugin n'applique aucun siège à lui — réappliquer le rectangle mémorisé en plein glissement est ce qui faisait auparavant sauter le flottant au premier mouvement.
+- Le flottant est **à l'intérieur de la fenêtre DSH**, et non une fenêtre séparée du système d'exploitation.
+- Une conversation a exactement **un hôte**. Une ligne de barre des tâches est une entrée, jamais une seconde copie active.
+- Une fenêtre dont la Session n'est pas active affiche une **transcription en lecture seule** : pas d'onglets View, pas de composeur. Passez-la à la Session active pour écrire.
+- Le flottant actif conserve une conversation locale complète tant qu'une page hors conversation est ouverte, mais cette page se trouve **derrière la fenêtre**. Le flottant ne se réduit pas automatiquement à une barre latérale et ne s'ancre pas de lui-même.
+- Le flottant appartient à la Session qui l'a ouvert. Changer de Session confie la conversation à la colonne centrale de la nouvelle Session ou à son propre flottant ; revenir en arrière ramène l'ancien flottant.
+- Redémarrer DSH efface les flottants et les lignes de barre des tâches. La conversation retourne dans la colonne centrale.
+- La réparation du composeur utilise quelques formes internes à DSH (l'éditeur derrière la boîte de composeur, l'enveloppe de saisie de la conversation et son emplacement de brouillon). Une future version de DSH qui les renommerait se dégraderait vers l'ancien comportement plutôt que de planter.
 
 ## Installation
 
-Nécessite DSH **>= 0.2.2-rc.1** — la version contre laquelle ce paquet est développé et testé.
+Nécessite DSH **>= 0.2.2-rc.1**.
 
 ### Depuis npm
 
-```bash
-npm i dsh-conversation-float
-```
+    npm i dsh-conversation-float@0.3.0
 
-Ensuite, enregistre-le dans le **`package.json` du profil** — les deux étapes sont nécessaires :
+Ensuite, enregistrez-le dans le **`package.json` du profil** — les deux étapes sont obligatoires :
 
-1. ajouter `"dsh-conversation-float": "^0.1.4"` à `dependencies`
-2. ajouter `"dsh-conversation-float"` à `dsh.profile.bundles` — seul un paquet enregistré apparaît dans la liste des plugins et peut être activé
+1. ajoutez `"dsh-conversation-float": "^0.3.0"` à `dependencies` ;
+2. ajoutez `"dsh-conversation-float"` à la liste `dsh.profile.bundles` du profil.
+
+Seul un bundle enregistré apparaît dans la liste des plugins et peut être activé.
+
+### Depuis une archive tarball
+
+    dsh plugin add <path-to>/dsh-conversation-float-0.3.0.tgz
+
+Ou placez l'archive dans le profil et utilisez une dépendance `file:`, puis ajoutez le nom à la liste des bundles.
 
 ### Depuis les sources
 
-1. place les sources où tu veux
-2. lie-les par une junction dans `<profil>/node_modules/dsh-conversation-float`
-3. dans le `package.json` du profil : `dependencies` reçoit `"dsh-conversation-float": "link:<chemin>"`, `dsh.profile.bundles` reçoit `"dsh-conversation-float"`
-4. `client.js` se recharge à chaud ; la moitié hôte (`index.js`) est un no-op et n'exige un redémarrage que si tu la modifies
+1. placez les sources où vous voulez ;
+2. liez-les dans `<profile>/node_modules/dsh-conversation-float` ;
+3. ajoutez une dépendance `link:` et le nom du bundle au profil.
+
+Le bundle est assemblé au démarrage, donc redémarrez DSH après l'installation ou la mise à jour.
 
 ## Licence
 

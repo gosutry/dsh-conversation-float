@@ -194,6 +194,8 @@ window.__ModuleLoader__.load({
       return table[key] ?? COPY.en[key] ?? key
     }
     const ANCHOR_ATTR = 'data-dsh-conversation-float-anchor'
+    /** Set on a taskbar row's button, with the Session its window shows. */
+    const ROW_MARK_ATTR = 'data-dsh-conversation-float-row'
     const CHAT_ID = 'conversation-float-panel'
     const CHAT_KIND = 'conversation-float-panel'
     /** A resource address our own tab type claims; the panel is opened by it. */
@@ -228,6 +230,8 @@ window.__ModuleLoader__.load({
      * composer belongs to the Session on screen.
      */
     const FACTORY_ATTR = 'data-dsh-conversation-float-factory'
+    /** A live-Session factory view that keeps its header and composer. */
+    const FACTORY_LIVE_ATTR = 'data-dsh-conversation-float-factory-live'
 
     let sidebarRight = null
     let layout = null
@@ -1936,6 +1940,18 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------ the menu entries */
 
     /**
+     * Whether the live conversation is minimised into the left sidebar. Its
+     * window is still mounted but hidden, and its taskbar row is the way back,
+     * so the "stow here" row has nothing left to do.
+     */
+    function conversationInLeftbar() {
+      const shown = liveSession()
+      if (shown === null) return false
+      const win = windows.get(shown)
+      return win !== undefined && win.el.hidden
+    }
+
+    /**
      * Whether the live conversation is a docked tab of the right sidebar. The
      * menu entry that says "move it here" has nothing to do when it is already.
      */
@@ -2462,28 +2478,6 @@ window.__ModuleLoader__.load({
       ))
     }
 
-    /**
-     * Hand the Session's draft slot back to the middle column.
-     *
-     * The column's own Conversation remounts when the page changes, and that
-     * remount is what re-binds its writer — the slot is single, so it cannot be
-     * bound from here.
-     */
-    function rebindMainComposer() {
-      const tabs = nativeViewTabs()
-      if (tabs.length < 2) return
-      const current = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') ?? tabs[0]
-      const other = tabs.find((tab) => tab !== current)
-      if (current === undefined || other === undefined) return
-      other.click()
-      // The switch back must wait for the OTHER view to be selected, which is
-      // exactly the commit the 80ms was guessing at; a slow frame made the two
-      // clicks land in the same commit and the page never actually moved.
-      untilFrame(() => other.getAttribute('aria-selected') === 'true', () => {
-        try { current.click() } catch { /* the header may be gone */ }
-      }, 800)
-    }
-
     function ensureWindow(sessionId) {
       const existing = windows.get(sessionId)
       if (existing !== undefined) return existing
@@ -2663,7 +2657,7 @@ window.__ModuleLoader__.load({
         untilFrame(() => {
           const column = findColumn()
           return column !== null && column.isConnected && column.closest(`[${WINDOW_ATTR}]`) === null
-        }, rebindMainComposer, 1200)
+        }, healComposerSoon, 1200)
       }
       refreshSwitchChips()
     }
@@ -2725,11 +2719,11 @@ window.__ModuleLoader__.load({
       // not outlive it as an orphan pointing at nothing.
       untilFrame(
         () => !windows.has(sessionId),
-        () => { if (liveSession() === sessionId) rebindMainComposer() },
+        () => { if (liveSession() === sessionId) healComposerSoon() },
         600,
         () => {
           if (windows.has(sessionId)) destroyWindow(sessionId)
-          if (liveSession() === sessionId) rebindMainComposer()
+          if (liveSession() === sessionId) healComposerSoon()
         },
       )
     }
@@ -2754,7 +2748,7 @@ window.__ModuleLoader__.load({
           const disposePanel = ctxRef.slots.register({ name: 'main', key: rowId, locale: NS }, makeWindowPanel(sessionId))
           const disposeRow = ctxRef.slots.register(
             { name: 'sidebar.panellist', id: rowId, order: 20, label: () => label },
-            DockIcon,
+            makeDockIcon(sessionId),
           )
           taskRows.set(sessionId, [disposePanel, disposeRow])
         } catch (error) {
@@ -2768,6 +2762,24 @@ window.__ModuleLoader__.load({
           try { off() } catch { /* the slot may be gone */ }
         }
       }
+    }
+
+    /**
+     * A taskbar row is DSH's own main-panel button: selecting it replaces the
+     * central entry, which would take a plugin or automation page away. When a
+     * page owns the main slot the row means only "bring that window forward";
+     * the page must stay where it is.
+     */
+    function taskbarRowPress(event) {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const row = target.closest(`button[${ROW_MARK_ATTR}]`)
+      if (row === null) return
+      const sessionId = row.getAttribute(ROW_MARK_ATTR)
+      if (sessionId === null || sessionId === '') return
+      event.preventDefault()
+      event.stopPropagation()
+      showWindow(sessionId)
     }
 
     /** Selecting a taskbar row shows that window and returns the centre. */
@@ -2889,6 +2901,8 @@ window.__ModuleLoader__.load({
    for these bodies are taken out. They used to be live input boxes whose draft
    writer was a second claimant on the Session's single slot. */
 [data-dsh-conversation-float-factory] [data-composer-seat] { display: none !important; }
+[data-dsh-conversation-float-factory-live] [data-composer-seat] { display: flex !important; }
+[data-dsh-conversation-float-factory-live] [data-dsh-conversation-float-anchor] { display: none !important; }
 [data-dsh-conversation-float-window-resize] {
   position: absolute; right: 0; bottom: 0; width: 22px; height: 22px;
   cursor: nwse-resize; touch-action: none;
@@ -2977,9 +2991,21 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** The left sidebar row's glyph. The row itself is owned by the sidebar. */
-    function DockIcon({ size = 16 }) {
-      return h('span', { style: { display: 'contents' } }, h(Icon, { name: 'window', size }))
+    /**
+     * The left sidebar row's glyph. The row itself is owned by the sidebar; we
+     * mark its button so a capture listener can tell our taskbar from a shipped
+     * row, and know which Session's window the row means.
+     */
+    function makeDockIcon(sessionId) {
+      return function DockIcon({ size = 16 }) {
+        const ref = React.useRef(null)
+        React.useLayoutEffect(() => {
+          const icon = ref.current
+          const row = icon === null ? null : icon.closest('button')
+          if (row !== null) row.setAttribute(ROW_MARK_ATTR, sessionId)
+        })
+        return h('span', { ref, style: { display: 'contents' } }, h(Icon, { name: 'window', size }))
+      }
     }
 
     /**
@@ -3006,12 +3032,13 @@ window.__ModuleLoader__.load({
       const [portalTarget, setPortalTarget] = React.useState(null)
       const [epoch, setEpoch] = React.useState(0)
       /**
-       * 'column'  the live middle column lives in this body
-       * 'factory' this body renders a Conversation of a Session that is not live
-       * 'empty'   the live Conversation is on screen as the middle column
-       * null      the first layout pass has not decided yet — render NOTHING,
-       *           because a factory view that mounts and unmounts for nothing
-       *           would clear the draft slot on its way out.
+       * 'column'       the live middle column lives in this body
+       * 'factory-live' the live Conversation is on a page: a full copy stays
+       *                here, with header, View tabs and composer
+       * 'factory'      a Conversation of a Session that is not live: record only
+       * null           the first layout pass has not decided yet — render
+       *                NOTHING, because a factory view that mounts and unmounts
+       *                for nothing would clear the draft slot on its way out.
        */
       const [mode, setMode] = React.useState(null)
       /** True while this body sits in a dock-kit float pane and has our window. */
@@ -3140,9 +3167,15 @@ window.__ModuleLoader__.load({
           // Conversation leaves DSH, and a hidden window is where it lives while
           // minimised. Only a body without a column to host renders its own view,
           // and so does every body while a page outside the Conversation is open.
+          // A page outside the conversation takes the main slot, so the real
+          // column goes home and the page lands in the ordinary frame. The live
+          // Session's window stays on screen and keeps a full Conversation of
+          // its own: header, View tabs and composer, not the read-only record a
+          // window of another Session shows. The page is behind the window.
+          if (page && mine && chromeless) revealChrome()
           const next = (mine && !page)
             ? (pane !== null ? 'column' : (findColumn() !== null ? 'column' : 'factory'))
-            : 'factory'
+            : (mine && page ? 'factory-live' : 'factory')
           setMode((prev) => (prev === next ? prev : next))
           // Never re-append a column that is already inside: that would re-size
           // the float under the user's hand.
@@ -3201,11 +3234,26 @@ window.__ModuleLoader__.load({
       let body = null
       // A body only ever renders a Conversation of its OWN when that
       // Conversation is not the live one — hosting the live column replaces it.
-      if (mode === 'factory') {
+      if (mode === 'factory' || mode === 'factory-live') {
         // Marked, so the stylesheet can take the composer out of this body and
-        // leave the transcript. The marker rides the same node in both hosts:
-        // a dock page and a float window show the same thing.
-        const shell = h('div', { key: epoch, [FACTORY_ATTR]: '', style: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%' } }, content)
+        // leave the transcript. A factory-live body is the exception: it is the
+        // live Session while a page owns the main slot, so it keeps the header,
+        // the View tabs and the composer instead of degrading to a record.
+        const live = mode === 'factory-live'
+        let header = null
+        if (live && typeof props.renderSlot === 'function') {
+          try {
+            header = props.renderSlot('conversation.session.header', { hideChrome: false })
+          } catch (error) {
+            report('[conversation-float] could not render the live header:', error)
+          }
+        }
+        const shell = h('div', {
+          key: epoch,
+          [FACTORY_ATTR]: '',
+          [FACTORY_LIVE_ATTR]: live ? '' : undefined,
+          style: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%' },
+        }, header, content)
         body = floating && portalTarget !== null ? ReactDOM.createPortal(shell, portalTarget) : shell
       }
       return h('div', hostProps, h(Styles), body)
@@ -3236,6 +3284,7 @@ window.__ModuleLoader__.load({
      * that brings it back lives in this same sidebar.
      */
     function MoveLeftRow({ onDismiss }) {
+      if (conversationInLeftbar()) return null
       return h(MoveRow, { onDismiss, label: t('moveLeft'), onSelect: moveConversationLeft })
     }
 
@@ -3256,7 +3305,7 @@ window.__ModuleLoader__.load({
         ctxRef = ctx
         // Build marker: lets a probe tell a re-imported client.js from the copy
         // the host still holds in memory (a page refresh does NOT reload it).
-        try { window.__dshFloatBuild = 'timers-0.2.6' } catch { /* no window yet */ }
+        try { window.__dshFloatBuild = 'rowguard-0.2.7' } catch { /* no window yet */ }
         ctx.effect(() => {
           try {
             return ctx.locale.register(NS, Object.fromEntries(LOCALES.map((id) => [id, { title: COPY[id].floatTitle, description: COPY[id].description }])))
@@ -3289,6 +3338,7 @@ window.__ModuleLoader__.load({
 
         ctx.effect(() => {
           window.addEventListener('keydown', escapeOnKey, true)
+          document.addEventListener('click', taskbarRowPress, true)
           // A hand on the sidebars outranks any retry the plugin started: it
           // ends the retry instead of being read as a state that disagrees.
           const onHand = (event) => {
@@ -3300,6 +3350,7 @@ window.__ModuleLoader__.load({
           window.addEventListener('pointerdown', onHand, true)
           return () => {
             window.removeEventListener('keydown', escapeOnKey, true)
+            document.removeEventListener('click', taskbarRowPress, true)
             window.removeEventListener('pointerdown', onHand, true)
           }
         })
@@ -3385,11 +3436,18 @@ window.__ModuleLoader__.load({
             sub.effect(() =>
               sub.slots.inject('sidebar.right.pane.tab', () => {
                 try {
-                  return sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS }, SessionPanel)
+                  return sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS, children: { 'conversation.session.header': { kind: 'single', scope: 'session' } } }, SessionPanel)
                 } catch (error) {
-                  window.__dshFloatError = 'body: ' + String(error && (error.stack || error))
-                  report('[conversation-float] tab body refused:', error)
-                  return () => {}
+                  // A host that will not let this body own the header slot
+                  // still gets the body, with content and composer only.
+                  report('[conversation-float] header-capable body refused, retrying:', error)
+                  try {
+                    return sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS }, SessionPanel)
+                  } catch (fallbackError) {
+                    window.__dshFloatError = 'body: ' + String(fallbackError && (fallbackError.stack || fallbackError))
+                    report('[conversation-float] tab body refused:', fallbackError)
+                    return () => {}
+                  }
                 }
               }),
             )

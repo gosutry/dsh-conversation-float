@@ -1,6 +1,6 @@
 {
   "name": "dsh-conversation-float",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "main": "./index.js",
@@ -11,7 +11,7 @@
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
-  "description": "Lifts the conversation view out of its fixed seat in DSH and turns it into a floating panel: drag it left to stow it in the sidebar drawer, centre to return it to the middle column, right to dock it in the right sidebar.",
+  "description": "Turns the DSH conversation into a floating window that stays usable over plugin and automation pages: keep it on screen, minimise it to a left-sidebar taskbar row, or dock it into the right sidebar.",
   "icon": "./icon.svg",
   "license": "MIT",
   "author": "gosutry",
