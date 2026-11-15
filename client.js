@@ -331,6 +331,9 @@ window.__ModuleLoader__.load({
           }
         }
         refreshSwitchChips()
+        // The transcript's height is a layout fact: refresh the float's own
+        // scroll lane here, where the composer has already settled.
+        for (const win of windows.values()) syncScrollbar(win)
       } finally {
         inLayout = false
         endPass()
@@ -2045,6 +2048,18 @@ window.__ModuleLoader__.load({
           down = null
           return
         }
+        // Only the title bar arms the drop bands. A press anywhere else on the
+        // window — the conversation, the composer, the scroll lane — is not a
+        // dock gesture, even if it is held still.
+        const grip = panel.querySelector('[' + WINDOW_GRIP_ATTR + ']')
+        if (grip === null || !(target instanceof Node) || !grip.contains(target)) {
+          down = null
+          return
+        }
+        if (target instanceof Element && target.closest('button') !== null) {
+          down = null
+          return
+        }
         // A press inside the Conversation is a text selection, not the panel's
         // drag. Everything else on the float is its chrome.
         if (movedColumn !== null && target instanceof Node && movedColumn.contains(target)) {
@@ -2220,6 +2235,8 @@ window.__ModuleLoader__.load({
     const WINDOW_BODY_ATTR = 'data-dsh-conversation-float-window-body'
     const WINDOW_GRIP_ATTR = 'data-dsh-conversation-float-window-grip'
     const WINDOW_RESIZE_ATTR = 'data-dsh-conversation-float-window-resize'
+    const WINDOW_SCROLLBAR_ATTR = 'data-dsh-conversation-float-window-scrollbar'
+    const WINDOW_SCROLLBAR_THUMB_ATTR = 'data-dsh-conversation-float-window-scrollbar-thumb'
     const WINDOW_TITLE_ATTR = 'data-dsh-conversation-float-window-title'
     const WINDOW_HIDE_PANE_ATTR = 'data-dsh-conversation-float-hide-pane'
     const WINDOW_KEY = 'dsh-conversation-float.window.'
@@ -2350,6 +2367,132 @@ window.__ModuleLoader__.load({
       win.el.style.top = rect.y + 'px'
       win.el.style.width = rect.width + 'px'
       win.el.style.height = rect.height + 'px'
+      placeResizer(win)
+    }
+
+    /**
+     * Size and place the resize grip against the composer's context meter.
+     *
+     * The composer's own little "of context used" button sits at the bottom
+     * corner of the window; a fixed corner square either covers it or is too
+     * small to hit. So the grip copies that button's height and sits right
+     * beside it, falling back to the corner when the button is not on screen.
+     */
+    function placeResizer(win) {
+      const resizer = win.resizer
+      if (resizer === void 0 || resizer === null) return
+      if (resizer.dataset.dshPinned === '1') return
+      resizer.dataset.dshPinned = '1'
+      resizer.style.width = '26px'
+      resizer.style.height = '26px'
+      resizer.style.right = '0'
+      resizer.style.bottom = '0'
+      resizer.style.left = 'auto'
+      resizer.style.top = 'auto'
+      resizer.style.zIndex = '50'
+    }
+
+
+    /** The element inside the float that actually scrolls the transcript. */
+    function findFloatScroller(win) {
+      const marked = win.body.querySelector('[data-conversation-scroll]')
+      if (marked !== null) return marked
+      let best = null
+      let bestRange = 0
+      for (const node of [win.body, ...win.body.querySelectorAll('*')]) {
+        if (!(node instanceof HTMLElement)) continue
+        const range = node.scrollHeight - node.clientHeight
+        if (range <= 8 || node.clientHeight === 0) continue
+        const overflow = window.getComputedStyle(node).overflowY
+        if (overflow !== 'auto' && overflow !== 'scroll' && overflow !== 'overlay') continue
+        if (range > bestRange) {
+          bestRange = range
+          best = node
+        }
+      }
+      return best
+    }
+
+    /** Size and position the float's own scroll thumb over the transcript. */
+    function syncScrollbar(win) {
+      const bar = win.scrollbar
+      const thumb = win.scrollThumb
+      if (bar === void 0 || thumb === void 0) return
+      let host = win.scrollHost
+      if (host === void 0 || host === null || !host.isConnected) {
+        const found = findFloatScroller(win)
+        if (found !== host) {
+          if (typeof win.stopScrollWatch === 'function') win.stopScrollWatch()
+          win.scrollHost = found
+          if (found !== null) {
+            const controller = new AbortController()
+            found.addEventListener('scroll', () => syncScrollbar(win), { passive: true, signal: controller.signal })
+            win.stopScrollWatch = () => controller.abort()
+          } else win.stopScrollWatch = null
+        }
+        host = found
+      }
+      if (host === null || host === void 0) {
+        bar.style.display = 'none'
+        win.body.classList.remove('dsh-float-own-scroll')
+        return
+      }
+      const view = host.clientHeight
+      const total = host.scrollHeight
+      if (total <= view + 8) {
+        bar.style.display = 'none'
+        win.body.classList.remove('dsh-float-own-scroll')
+        return
+      }
+      bar.style.display = 'block'
+      win.body.classList.add('dsh-float-own-scroll')
+      const trackHeight = bar.clientHeight
+      if (trackHeight === 0) return
+      const height = Math.max(96, Math.round(trackHeight * view / total))
+      const maxTop = Math.max(0, trackHeight - height)
+      const maxScroll = Math.max(1, total - view)
+      thumb.style.height = height + 'px'
+      thumb.style.transform = 'translateY(' + Math.round(maxTop * (host.scrollTop / maxScroll)) + 'px)'
+    }
+
+    /** Let a finger drag the thumb straight up and down the lane. */
+    function bindScrollbar(win) {
+      const bar = win.scrollbar
+      const thumb = win.scrollThumb
+      if (bar === void 0 || thumb === void 0) return
+      thumb.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return
+        const host = win.scrollHost
+        if (host === void 0 || host === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        try { thumb.setPointerCapture(event.pointerId) } catch { /* older engines */ }
+        const startY = event.clientY
+        const startTop = host.scrollTop
+        const maxTop = Math.max(1, bar.clientHeight - thumb.offsetHeight)
+        const ratio = Math.max(1, host.scrollHeight - host.clientHeight) / maxTop
+        win.heldScrollbar = true
+        const move = (next) => {
+          const maxScroll = Math.max(1, host.scrollHeight - host.clientHeight)
+          const target = Math.max(0, Math.min(maxScroll, startTop + (next.clientY - startY) * ratio))
+          host.scrollTop = target
+          // Follow the finger from the requested offset instead of reading
+          // scrollTop back: Android applies the scroll on the compositor, so a
+          // read right after the write still answers with the old position.
+          const liveMaxTop = Math.max(1, bar.clientHeight - thumb.offsetHeight)
+          thumb.style.transform = 'translateY(' + Math.round(liveMaxTop * (target / maxScroll)) + 'px)'
+        }
+        const stop = () => {
+          win.heldScrollbar = false
+          window.removeEventListener('pointermove', move)
+          window.removeEventListener('pointerup', stop)
+          window.removeEventListener('pointercancel', stop)
+          syncScrollbar(win)
+        }
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointercancel', stop)
+      })
     }
 
     /**
@@ -2510,17 +2653,25 @@ window.__ModuleLoader__.load({
       header.appendChild(chip)
       header.appendChild(windowButton(t('minimize'), '—', () => hideWindow(sessionId)))
       header.appendChild(windowButton(t('close'), '✕', () => closeWindow(sessionId)))
+      const scrollbar = document.createElement('div')
+      scrollbar.setAttribute(WINDOW_SCROLLBAR_ATTR, '')
+      const scrollThumb = document.createElement('div')
+      scrollThumb.setAttribute(WINDOW_SCROLLBAR_THUMB_ATTR, '')
+      scrollbar.appendChild(scrollThumb)
       el.appendChild(header)
       el.appendChild(body)
+      el.appendChild(scrollbar)
       el.appendChild(resizer)
       el.hidden = true
       root.appendChild(el)
       const win = {
-        el, body, title, header, resizer, switchChip: chip,
+        el, body, title, header, resizer, scrollbar, scrollThumb, switchChip: chip,
         rect: readWindowRect(sessionId) ?? defaultWindowRect(),
       }
       windows.set(sessionId, win)
       applyWindowRect(win, clampRect(win.rect))
+      placeResizer(win)
+      bindScrollbar(win)
       bindWindowDrag(sessionId, win)
       // The float carries the three drop bands: hold it still, then drag to the
       // left sidebar (stow), the middle (return) or the right sidebar (dock).
@@ -2643,6 +2794,9 @@ window.__ModuleLoader__.load({
       } catch { /* older engines */ }
       // Typing belongs to the view that just took the screen.
       bumpContentEpoch(sessionId)
+      // The body mounts with the window: one frame later is when it can report
+      // how tall the transcript really is.
+      requestAnimationFrame(() => syncScrollbar(win))
       return win
     }
 
@@ -2672,6 +2826,18 @@ window.__ModuleLoader__.load({
       if (typeof win.stopBandDrag === 'function') {
         try { win.stopBandDrag() } catch { /* listeners already gone */ }
         win.stopBandDrag = null
+      }
+      if (typeof win.stopResizeWatch === 'function') {
+        try { win.stopResizeWatch() } catch { /* observer already gone */ }
+        win.stopResizeWatch = null
+      }
+      if (typeof win.stopChipWatch === 'function') {
+        try { win.stopChipWatch() } catch { /* observer already gone */ }
+        win.stopChipWatch = null
+      }
+      if (typeof win.stopScrollWatch === 'function') {
+        try { win.stopScrollWatch() } catch { /* listener already gone */ }
+        win.stopScrollWatch = null
       }
       win.el.remove()
       queueMicrotask(syncTaskbar)
@@ -2903,9 +3069,23 @@ window.__ModuleLoader__.load({
 [data-dsh-conversation-float-factory] [data-composer-seat] { display: none !important; }
 [data-dsh-conversation-float-factory-live] [data-composer-seat] { display: flex !important; }
 [data-dsh-conversation-float-factory-live] [data-dsh-conversation-float-anchor] { display: none !important; }
+/* The float scrolls with its own lane and a fat thumb, and hides the thin
+   platform scrollbar that a finger cannot grab. */
+[data-dsh-conversation-float-window-body].dsh-float-own-scroll * { scrollbar-width: none; }
+[data-dsh-conversation-float-window-body].dsh-float-own-scroll *::-webkit-scrollbar { width: 0; height: 0; }
+[data-dsh-conversation-float-window-scrollbar] {
+  position: absolute; top: 34px; right: 0; bottom: 30px; width: 16px;
+  z-index: 40; display: none; touch-action: none; pointer-events: none;
+}
+[data-dsh-conversation-float-window-scrollbar-thumb] {
+  position: absolute; top: 0; left: 0; right: 0; min-height: 96px;
+  border-radius: 999px; will-change: transform;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary, #6b7280) 55%, transparent);
+}
 [data-dsh-conversation-float-window-resize] {
-  position: absolute; right: 0; bottom: 0; width: 22px; height: 22px;
-  cursor: nwse-resize; touch-action: none;
+  position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; z-index: 50;
+  cursor: nwse-resize; touch-action: none; pointer-events: auto;
   background: linear-gradient(135deg, transparent 50%, var(--dsw-alias-border-l3, rgba(0, 0, 0, .22)) 50%);
 }
 [data-dsh-conversation-float-hide-pane] {
@@ -3436,7 +3616,7 @@ window.__ModuleLoader__.load({
             sub.effect(() =>
               sub.slots.inject('sidebar.right.pane.tab', () => {
                 try {
-                  return sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS, children: { 'conversation.session.header': { kind: 'single', scope: 'session' } } }, SessionPanel)
+                  return sub.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID, locale: NS }, SessionPanel)
                 } catch (error) {
                   // A host that will not let this body own the header slot
                   // still gets the body, with content and composer only.
