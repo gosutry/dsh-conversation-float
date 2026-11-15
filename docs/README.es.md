@@ -16,7 +16,7 @@
 
 ## Abrir, minimizar, cerrar
 
-Haz clic en el icono de ventana de la barra de título de la sesión. La ventana flotante se abre grande (unos 920×720, escalada al tamaño de la ventana), con el resto de DSH todavía visible y ambas barras laterales en el espacio que deja libre.
+Haz clic en el icono de ventana de la barra de título de la sesión. La ventana flotante se abre con su tamaño de siempre (unos 450×720, limitado por la ventana de la aplicación), con el resto de DSH todavía visible.
 
 El mismo botón recorre tres estados:
 
@@ -38,7 +38,7 @@ Mantén pulsada la barra de título de la ventana y arrastra. Si te detienes **1
 | --- | --- |
 | **Barra lateral izquierda** | La ventana se minimiza en la barra lateral izquierda. No se cierra; su fila de la barra de tareas es la forma de volver. La columna central queda vacía. |
 | **Centro** | La ventana se cierra y la conversación vuelve a la columna central. |
-| **Barra lateral derecha** | La conversación se acopla como una página nativa en la barra lateral derecha, con los propios controles de volver y cerrar de DSH. |
+| **Barra lateral derecha** | Solo mientras la conversación ocupa la columna principal: se acopla como una página nativa en la barra lateral derecha, con los propios controles de volver y cerrar de DSH. Las páginas de plugins, automatizaciones, ajustes y demás entradas de la barra izquierda no dibujan columna derecha, así que soltar allí devuelve la conversación al centro. |
 
 La fila de la barra lateral izquierda lleva el título de la Conversation, no el nombre del plugin. Mantiene ese título mientras la ventana mira otras Conversations. Al hacer clic en la fila solo se muestra y se trae al frente esa ventana; nunca selecciona el panel principal del plugin ni quita una página de plugin o de automatización.
 
@@ -57,13 +57,13 @@ Una ventana de una Session que **no** es la activa sigue mostrando una transcrip
 Cada Session puede tener una ventana flotante. Cada ventana flotante recibe una fila en la barra lateral izquierda, ordenadas como una barra de tareas. Las filas llevan el nombre de su Session.
 
 - Al hacer clic en una fila **se trae al frente esa ventana**. No cambia la Session actual ni modifica el panel principal.
-- Una ventana que no está activa muestra el chip **Cambiar a esta conversación** cuando está encima. Al hacer clic en él, esa Session pasa a estar activa; la ventana toma entonces la columna de conversación real.
+- Una ventana que no está activa muestra el chip **Cambiar a esta conversación** cuando está encima. Al hacer clic en él, esa Session pasa a estar activa; la ventana toma entonces la columna de conversación real. Pulsado desde Plugins, Automatizaciones u otra página que no sea de conversación, mantiene esa página —la página sigue en la columna central y la ventana pasa a ser la misma conversación local completa que muestra una ventana activa en una página.
 - Cerrar una ventana no afecta a las demás.
 - La fila de la barra de tareas de una sesión es una entrada, nunca una segunda copia activa de la conversación.
 
 ## Acoplar en la barra lateral derecha
 
-Arrastrar hacia la derecha, o usar **Mover la conversación aquí**, entrega la pestaña a la barra lateral derecha de DSH. El tipo de pestaña se registra con `keepMounted`, así que cambiar a otra pestaña de la barra lateral derecha deja la conversación en el cuerpo de su propia pestaña. La columna sigue al cuerpo retenido que esté en pantalla mientras su Session está activa; para cualquier otra Session, la columna central vuelve a ser el asiento.
+La fila **Mover la conversación aquí** de la propia barra lateral derecha entrega la pestaña a la barra lateral derecha de DSH; arrastrar ya no acopla, porque la columna derecha solo se dibuja mientras la conversación ocupa la columna principal. El tipo de pestaña se registra con `keepMounted`, así que cambiar a otra pestaña de la barra lateral derecha deja la conversación en el cuerpo de su propia pestaña. La columna sigue al cuerpo retenido que esté en pantalla mientras su Session está activa; para cualquier otra Session, la columna central vuelve a ser el asiento.
 
 ## Borrador y compositor
 

@@ -10,13 +10,20 @@
  * the panel (same document, same React root, so events and reconciliation keep
  * working) and moved back to its seat when the panel closes.
  *
- * While the window is on screen it can be dragged onto three drop bands:
+ * While the window is on screen it can be dragged onto three drop bands — the
+ * right one only while the Conversation fills the main column:
  *
  *   left    the window minimises — still mounted, hidden — and its taskbar row
  *           in the left sidebar brings it back; the centre column stays empty,
  *           exactly as it is while the window is on screen
- *   center  the window closes and the Conversation returns to its column
- *   right   the tab is handed to the right sidebar, where DSH docks it
+ * center  the window closes and the Conversation returns to its column
+ *
+ * The right band exists only while the Conversation fills the main column.
+ * Open Plugins, Automations, Settings or any other left-sidebar page and the
+ * right column is not drawn at all — DSH suppresses it while a global panel is
+ * active — so a right band there would promise a column that cannot appear.
+ * On those pages the drag has two bands only: everything right of the left band
+ * is centre, and the outline says so.
  *
  * The bands are measured once per drag. Holding the press for {@link DWELL_MS}
  * switches the drag into judging: from that moment the outline follows the band
@@ -261,6 +268,14 @@ window.__ModuleLoader__.load({
     /** Whether the main slot carried a page during the last pass. */
     let lastPageOpen = false
     /**
+     * The Session DSH last said was current.
+     *
+     * A pass has to run when this moves even while a page owns the main slot:
+     * the float's own switch chip trades the live Conversation and keeps the
+     * page open, so "a page is up, nothing can have changed" stopped being true.
+     */
+    let lastSelected = null
+    /**
      * What one layout pass has already worked out.
      *
      * While a page owns the main slot the Conversation column is gone, so every
@@ -297,10 +312,16 @@ window.__ModuleLoader__.load({
       const pageChanged = pageOpen !== lastPageOpen
       lastPageOpen = pageOpen
       // A page owns the main slot: the Conversation is not on screen, the column
-      // is home and every body already shows its own transcript. Nothing a pass
-      // could decide is different until the page closes — and that transition is
-      // what the flag above catches.
-      if (pageOpen && !pageChanged) return
+      // is home and every body shows its own transcript. Nothing a pass could
+      // decide is different until the page closes — except WHICH Session is the
+      // current one, which the float's switch chip changes without closing the
+      // page. That switch is the one thing this early exit must not swallow: the
+      // new Session's window has to turn into the full Conversation and the old
+      // one back into a transcript.
+      const selectedNow = selectedSession()
+      const selectedChanged = selectedNow !== lastSelected
+      lastSelected = selectedNow
+      if (pageOpen && !pageChanged && !selectedChanged) return
       inLayout = true
       beginPass()
       try {
@@ -527,96 +548,6 @@ window.__ModuleLoader__.load({
       return null
     }
 
-    /** DSH's layout grid: every panel edge lands on a multiple of it. */
-    const GRID = 8
-    /**
-     * The float's size: 450 x 720 by request, never larger than the room the
-     * window actually has. Asking for more makes the dock kit clamp on its own
-     * and hands back a half-sized panel with no room left for the messages.
-     */
-    function floatSize() {
-      return {
-        width: Math.max(320, Math.min(450, window.innerWidth - 80)),
-        height: Math.max(320, Math.min(720, window.innerHeight - 80)),
-      }
-    }
-
-    /** The room the sidebars leave in the middle: their two inner edges. */
-    function middleRoom() {
-      const width = window.innerWidth
-      const overlay = document.querySelector('[data-shell-overlay]')
-      const frame = overlay === null ? null : overlay.parentElement
-      let left = 0
-      let right = width
-      if (frame !== null) {
-        const sidebar = frame.firstElementChild
-        if (sidebar !== null) {
-          const box = sidebar.getBoundingClientRect()
-          if (box.width > 80) left = Math.round(box.right)
-        }
-        const rightColumn = frame.querySelector('[data-rightbar-col]')
-        if (rightColumn !== null) {
-          const box = rightColumn.getBoundingClientRect()
-          if (box.width > 80) right = Math.round(box.left)
-        }
-      }
-      return { left, right: Math.max(left, right) }
-    }
-
-    /**
-     * Upper-left corner of that seat: centred in the room the sidebars leave,
-     * snapped, clear of the frame. With the window showing nothing but the
-     * float those columns measure zero and the seat falls back to the window.
-     */
-    function floatSeat(size) {
-      const snap = (value) => Math.max(0, Math.round(value / GRID) * GRID)
-      const room = middleRoom()
-      const free = room.right - room.left
-      return {
-        x: free > size.width ? snap(room.left + (free - size.width) / 2) : snap(room.left),
-        y: Math.max(48, snap((window.innerHeight - size.height) / 2)),
-      }
-    }
-
-    /**
-     * Give the float a readable size on open. DSH's dock kit builds a fresh
-     * float at a small default; the plugin cannot write the panel's inline box,
-     * but the kit exposes the very intent its own resize drag dispatches:
-     * `sidebarRight.require()` -> `actions.resizeFloat(sessionId, paneId, rect)`.
-     * The pane id is the float element's own `data-dockkit-float` value.
-     */
-    function sizeFloat() {
-      const panel = floatPanel()
-      if (panel === null) return
-      const paneId = panel.getAttribute(FLOAT_ATTR) ?? document.querySelector(`[${FLOAT_ATTR}]`)?.getAttribute(FLOAT_ATTR)
-      if (paneId === null || paneId === undefined) return
-      let seat = null
-      try {
-        seat = sidebarRight?.require?.() ?? null
-      } catch {
-        seat = null
-      }
-      if (seat === null) {
-        // The mounted-session shortcut can be missing right after a docked tab
-        // is floated again; fall back to the per-session action face.
-        try {
-          const sessionId = sidebarRight?.mounted?.getSnapshot?.()
-          const actions = sessionId === undefined ? undefined : sidebarRight?.actionsFor?.(sessionId)
-          if (actions !== undefined && actions !== null) seat = { sessionId, actions }
-        } catch {
-          seat = null
-        }
-      }
-      if (seat === null || typeof seat.actions?.resizeFloat !== 'function') return
-      const size = floatSize()
-      const corner = floatSeat(size)
-      const rect = { ...corner, width: size.width, height: size.height }
-      try {
-        seat.actions.resizeFloat(seat.sessionId, paneId, rect)
-      } catch (error) {
-        report('[conversation-float] could not size the floating panel:', error)
-      }
-    }
     function attachColumn(container, keepHome = false) {
       const column = findColumn()
       if (column === null || container === null) return null
@@ -650,9 +581,6 @@ window.__ModuleLoader__.load({
       noteColumnMoved()
       const ownPanel = floatPanel()
       if (ownPanel !== null) ownPanel.setAttribute(OWN_FLOAT_ATTR, '')
-      // The dock kit gives a new float its own seat; ask it — through the same
-      // intent its own resize drag uses — for the configured one.
-      sizeFloat()
 
       // A host has taken the column, so a docking that was waiting for its tab
       // has arrived: the restore guard must not outlive it.
@@ -1106,7 +1034,13 @@ window.__ModuleLoader__.load({
         // A docked page can be the Conversation's only home; its Session is the
         // one on screen and the entry must still find it.
         const docked = dockedBodySession()
-        answer = docked !== null ? docked : lastSession
+        // On a page that is not a Conversation there is no column to read and no
+        // docked body to read either: DSH's own selection store is the only
+        // answer, and it is the right one there — the page never renders the
+        // Conversation at all, so nothing on screen can disagree with it. That is
+        // how a switch made from a page finds the Session it just made live.
+        const selected = docked === null && mainPanelOpen() ? selectedSession() : null
+        answer = docked !== null ? docked : (selected ?? lastSession)
       }
       if (answer !== null) lastSession = answer
       if (passMemo !== null) {
@@ -1679,49 +1613,74 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------------- bands */
 
     /**
-     * The three drop bands, taken from the frame's own columns: the left
-     * sidebar is the frame's first child, the right sidebar carries
-     * `data-rightbar-col`, and the middle column is whatever lies between them.
-     * The preview therefore covers the same area the drop lands in.
+     * The drop bands a drag may judge against, taken from the frame's own
+     * columns: the left sidebar is the frame's first child, the right sidebar
+     * carries `data-rightbar-col`, and the middle column is whatever lies
+     * between them. The preview therefore covers the same area the drop lands
+     * in.
+     *
+     * The right band is CONDITIONAL. DSH draws the right column only while the
+     * Conversation fills the main column; a plugin, automation or settings page
+     * suppresses it, so docking there would open a tab into a column nothing is
+     * drawing. On those pages `right` is null: there are two bands, and every
+     * point past the left band is centre.
      */
     function bands() {
       const width = window.innerWidth
       const height = window.innerHeight
+      const dockable = !mainPanelOpen()
       // With the window showing nothing but the float, the columns are hidden:
       // their rects read as a zero-width left band, which is exactly why "放进
       // 左栏" could never be chosen. Judge by thirds of the window there.
-      if (chromeless) return thirds(width, height)
+      if (chromeless) return thirds(width, height, dockable)
       const overlay = document.querySelector('[data-shell-overlay]')
       const frame = overlay === null ? null : overlay.parentElement
       let left = 0
-      let right = 0
+      let right = dockable ? 0 : null
       if (frame !== null) {
         const sidebar = frame.firstElementChild
         if (sidebar !== null) left = Math.round(sidebar.getBoundingClientRect().right)
-        const rightCol = frame.querySelector('[data-rightbar-col]')
-        if (rightCol !== null) right = Math.round(rightCol.getBoundingClientRect().left)
+        if (right !== null) {
+          const rightCol = frame.querySelector('[data-rightbar-col]')
+          if (rightCol !== null) right = Math.round(rightCol.getBoundingClientRect().left)
+        }
       }
       // A collapsed right column measures at the window's edge, which would leave
       // the "dock right" band zero wide and unreachable; keep a third of the
       // window aimable there, and the docking itself opens the column.
-      if (right >= width - 1) right = Math.round((width * 2) / 3)
+      if (right !== null && right >= width - 1) right = Math.round((width * 2) / 3)
       // While the columns are hidden the measurements collapse; keep the last
-      // geometry that made sense so a drag does not land in nonsense bands.
-      const sane = left >= 0 && right > left + 80 && right <= width + 1
-      if (!sane) return lastBand !== null ? { ...lastBand, width, height } : thirds(width, height)
+      // geometry that made sense so a drag does not land in nonsense bands. A
+      // remembered geometry only serves a frame of the same kind: a band read on
+      // the Conversation page kept its right edge across a page switch.
+      const edge = right === null ? width : right
+      const sane = left >= 0 && edge > left + 80 && edge <= width + 1
+      if (!sane) {
+        if (lastBand !== null && (lastBand.right === null) === (right === null)) return { ...lastBand, width, height }
+        return thirds(width, height, dockable)
+      }
       // A railed drawer is too thin to aim at: widen its band to something a
       // hand can actually hit.
       lastBand = { left: Math.max(left, 96), right, width, height }
       return lastBand
     }
 
-    /** The window in thirds: the bands used while the float is alone. */
-    function thirds(width, height) {
-      return { left: Math.round(width / 3), right: Math.round((width * 2) / 3), width, height }
+    /**
+     * The window in thirds: the bands used while the float is alone.
+     * `right` is null on a page that suppresses the right column, which leaves
+     * this function returning the same two bands the measured frame would.
+     */
+    function thirds(width, height, dockable) {
+      return {
+        left: Math.round(width / 3),
+        right: dockable ? Math.round((width * 2) / 3) : null,
+        width,
+        height,
+      }
     }
     function zoneAt(x, band) {
       if (x <= band.left) return 'left'
-      if (x >= band.right) return 'right'
+      if (band.right !== null && x >= band.right) return 'right'
       return 'center'
     }
 
@@ -1753,8 +1712,11 @@ window.__ModuleLoader__.load({
 
     function previewRect(zone, band) {
       if (zone === 'left') return [0, 0, band.left, band.height]
-      if (zone === 'right') return [band.right, 0, band.width - band.right, band.height]
-      return [band.left, 0, band.right - band.left, band.height]
+      // Without a right edge — a page that suppresses the right column — the
+      // centre band runs to the frame's own edge.
+      const edge = band.right === null ? band.width : band.right
+      if (zone === 'right') return [edge, 0, band.width - edge, band.height]
+      return [band.left, 0, edge - band.left, band.height]
     }
 
     /**
@@ -1904,6 +1866,10 @@ window.__ModuleLoader__.load({
     }
 
     function drop(zone) {
+      // Dock right only where DSH draws the right column: a page suppresses it,
+      // and a tab opened into a column nobody draws is a tab nobody can see. A
+      // dock asked for from a page lands in the centre instead.
+      if (zone === 'right' && mainPanelOpen()) zone = 'centre'
       if (zone === 'right') {
         dockingRight = true
         // The float leaves as an ordinary right-sidebar tab. The sidebar
@@ -2241,6 +2207,18 @@ window.__ModuleLoader__.load({
     const WINDOW_HIDE_PANE_ATTR = 'data-dsh-conversation-float-hide-pane'
     const WINDOW_KEY = 'dsh-conversation-float.window.'
     /**
+     * The generation of a stored window rectangle.
+     *
+     * A stored rect is either a size the user dragged out or the default that was
+     * in force the first time that Session's window opened. When the default
+     * changes, an old record is not a choice — it is the previous default, and
+     * honouring it hides the new size for every Session that was ever opened.
+     * The stamp tells the two apart: a record from an older build is ignored
+     * once, so the first open after an upgrade takes the new default, and every
+     * size the user drags out from then on is kept exactly as before.
+     */
+    const WINDOW_RECT_VERSION = 2
+    /**
      * One per-Session content epoch.
      *
      * DSH binds a Session's draft writer into a SINGLE slot
@@ -2293,6 +2271,9 @@ window.__ModuleLoader__.load({
         if (raw === null) return null
         const r = JSON.parse(raw)
         if (!r || typeof r.x !== 'number' || typeof r.y !== 'number' || typeof r.width !== 'number' || typeof r.height !== 'number') return null
+        // A rect written by an older build: the default it was sized against is
+        // not the default any more, so it is not a size anybody chose.
+        if (r.v !== WINDOW_RECT_VERSION) return null
         return r
       } catch {
         return null
@@ -2301,7 +2282,7 @@ window.__ModuleLoader__.load({
 
     function writeWindowRect(sessionId, rect) {
       try {
-        window.localStorage.setItem(WINDOW_KEY + sessionId, JSON.stringify(rect))
+        window.localStorage.setItem(WINDOW_KEY + sessionId, JSON.stringify({ ...rect, v: WINDOW_RECT_VERSION }))
       } catch {
         /* a full quota must not break the float */
       }
@@ -2351,8 +2332,11 @@ window.__ModuleLoader__.load({
 
     function defaultWindowRect() {
       const top = windowTopInset()
-      const width = Math.min(920, Math.round(window.innerWidth * 0.62))
-      const height = Math.min(720, Math.round((window.innerHeight - top) * 0.86))
+      // The float's long-standing size, now the default for the window of our
+      // own: 450 x 720 by request, never wider or taller than the room the
+      // application window leaves around it.
+      const width = Math.max(320, Math.min(450, window.innerWidth - 80))
+      const height = Math.max(320, Math.min(720, window.innerHeight - 80))
       return clampRect({
         x: Math.round((window.innerWidth - width) / 2),
         y: Math.round(top + (window.innerHeight - top - height) / 2),
@@ -2736,6 +2720,15 @@ window.__ModuleLoader__.load({
       win.resizer.addEventListener('pointercancel', settled)
     }
 
+    /** The page filling the main column, or null while the Conversation has it. */
+    function currentPanel() {
+      try {
+        return layout?.panelInfo?.getSnapshot?.()?.activePanelId ?? null
+      } catch {
+        return null
+      }
+    }
+
     /**
      * Make another Conversation the one on screen.
      *
@@ -2743,9 +2736,20 @@ window.__ModuleLoader__.load({
      * and both columns move together — the same call the sidebar's session rows
      * make. The window then re-decides its own mode on the next layout pass, and
      * the real column, header and composer follow it in.
+     *
+     * From a page, DSH's switch is half wrong: `openSession` selects the Session
+     * AND reveals the Conversation, which closes the page the user is working in.
+     * A switch made here must trade the live Conversation and leave the page
+     * where it is — the same thing the user gets by opening the page while this
+     * Session is already the current one. So the page is read first and put back
+     * in the same tick: `openSession` runs its `selectPanel(null)` synchronously,
+     * and no React render can happen between two writes of one JavaScript task,
+     * so the slot never actually empties and the page never unmounts.
      */
     function switchToWindow(sessionId) {
+      const page = mainPanelOpen() ? currentPanel() : null
       let switched = false
+      let threw = false
       try {
         const workspace = typeof ctxRef?.get === 'function' ? ctxRef.get('uiWorkspace') : null
         if (workspace !== null && workspace !== undefined && typeof workspace.openSession === 'function') {
@@ -2753,10 +2757,22 @@ window.__ModuleLoader__.load({
           switched = true
         }
       } catch (error) {
+        threw = true
         report('[conversation-float] could not switch the conversation:', error)
       }
+      if (page !== null) {
+        // Same tick as the switch, and never skipped on the failure path: a
+        // switch that threw may still have closed the panel.
+        try {
+          layout?.selectPanel?.(page)
+        } catch (error) {
+          report('[conversation-float] could not put the page back:', error)
+        }
+      }
       if (!switched) {
-        report('[conversation-float] no uiWorkspace service to switch the Session')
+        // A throw already said what went wrong; the missing-service line is for
+        // the other way this fails, so the two never stack into noise.
+        if (!threw) report('[conversation-float] no uiWorkspace service to switch the Session')
         return
       }
       raiseWindow(sessionId)
@@ -2767,6 +2783,12 @@ window.__ModuleLoader__.load({
       // delays could all fire before the column moved, or long after.
       notifyLayout()
       refreshSwitchChips()
+      // The wait below is "until the column shows the Session we switched to".
+      // A page keeps the column home and leaves it showing nothing, so there is
+      // no such change to wait for: the pass above already moved the window to
+      // the full local Conversation, and a frame loop here would only burn
+      // frames for two and a half seconds.
+      if (page !== null) return
       let lastSeen = '__start__'
       untilFrame(() => {
         const column = findColumn()
@@ -3485,7 +3507,7 @@ window.__ModuleLoader__.load({
         ctxRef = ctx
         // Build marker: lets a probe tell a re-imported client.js from the copy
         // the host still holds in memory (a page refresh does NOT reload it).
-        try { window.__dshFloatBuild = 'rowguard-0.2.7' } catch { /* no window yet */ }
+        try { window.__dshFloatBuild = 'pagebands-0.3.2' } catch { /* no window yet */ }
         ctx.effect(() => {
           try {
             return ctx.locale.register(NS, Object.fromEntries(LOCALES.map((id) => [id, { title: COPY[id].floatTitle, description: COPY[id].description }])))
@@ -3535,11 +3557,6 @@ window.__ModuleLoader__.load({
           }
         })
 
-        // One frame after load, give any float already on screen its size.
-        ctx.effect(() => {
-          const id = window.requestAnimationFrame(() => sizeFloat())
-          return () => window.cancelAnimationFrame(id)
-        })
         // A reload can leave the last run's hidden columns behind.
         // An earlier build parked the View tab strip in the main window; put it
         // back inside the Conversation column and drop the parked container.

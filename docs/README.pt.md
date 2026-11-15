@@ -16,7 +16,7 @@
 
 ## Abrir, minimizar, fechar
 
-Clique no ícone de janela na barra de título da sessão. O flutuante abre grande (cerca de 920×720, ajustado à janela), com o resto do DSH ainda visível e ambas as barras laterais no espaço que ele deixa.
+Clique no ícone de janela na barra de título da sessão. O flutuante abre no seu tamanho de sempre (cerca de 450×720, limitado pela janela da aplicação), com o resto do DSH ainda visível.
 
 O mesmo botão percorre três estados:
 
@@ -38,7 +38,7 @@ Segure na barra de título da janela e arraste. Manter-se parado durante **1,2 s
 | --- | --- |
 | **Barra lateral esquerda** | A janela é minimizada na barra lateral esquerda. Não é fechada; a sua linha na barra de tarefas é o caminho de volta. A coluna central fica vazia. |
 | **Centro** | A janela fecha e a conversa volta para a coluna central. |
-| **Barra lateral direita** | A conversa é ancorada como página nativa na barra lateral direita, com os próprios controlos de retorno e de fecho do DSH. |
+| **Barra lateral direita** | Apenas enquanto a conversa ocupa a coluna principal: é ancorada como página nativa na barra lateral direita, com os próprios controlos de retorno e de fecho do DSH. Páginas de plugins, automações, definições e outras entradas da barra esquerda não desenham coluna direita, por isso largar ali devolve a conversa ao centro. |
 
 A linha da barra lateral esquerda mostra o título da conversa, não o nome do plugin. Mantém esse título enquanto a janela está a ver outras conversas. Clicar na linha apenas mostra e traz essa janela para a frente; nunca seleciona o painel principal do plugin e nunca retira uma página de plugin ou de automatização.
 
@@ -57,13 +57,13 @@ Uma janela de uma sessão que **não** é a ativa mostra ainda uma transcrição
 Cada sessão pode ter um flutuante. Cada flutuante ganha uma linha na barra lateral esquerda, ordenada como uma barra de tarefas. As linhas têm o nome das respetivas sessões.
 
 - Clicar numa linha **traz essa janela para a frente**. Não muda a sessão atual nem altera o painel principal.
-- Uma janela que não está ativa mostra um chip **Mudar para esta conversa** quando está por cima. Clicá-lo torna essa sessão ativa; a janela passa então a ocupar a coluna real da conversa.
+- Uma janela que não está ativa mostra um chip **Mudar para esta conversa** quando está por cima. Clicá-lo torna essa sessão ativa; a janela passa então a ocupar a coluna real da conversa. Premido em Plugins, Automações ou outra página que não seja de conversa, mantém essa página — a página fica na coluna central e a janela passa a ser a mesma conversa local completa que uma janela ativa mostra numa página.
 - Fechar uma janela não afeta as outras.
 - Uma linha de sessão na barra de tarefas é uma entrada, nunca uma segunda cópia ativa da conversa.
 
 ## Ancorar na barra lateral direita
 
-Arrastar para a direita, ou usar **Mover a conversa para aqui**, entrega o separador à barra lateral direita do DSH. O tipo de separador é registado com `keepMounted`, pelo que mudar para outro separador da barra direita deixa a conversa no corpo do seu próprio separador. A coluna segue o corpo retido que estiver no ecrã enquanto a sua sessão está ativa; para qualquer outra sessão, a coluna central volta a ser o lugar.
+A linha **Mover a conversa para aqui** da própria barra lateral direita entrega o separador à barra lateral direita do DSH; arrastar já não ancora, porque a coluna direita só é desenhada enquanto a conversa ocupa a coluna principal. O tipo de separador é registado com `keepMounted`, pelo que mudar para outro separador da barra direita deixa a conversa no corpo do seu próprio separador. A coluna segue o corpo retido que estiver no ecrã enquanto a sua sessão está ativa; para qualquer outra sessão, a coluna central volta a ser o lugar.
 
 ## Rascunho e compositor
 

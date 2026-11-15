@@ -16,7 +16,7 @@
 
 ## Open, minimise, close
 
-Click the window icon in the session title bar. The float opens large (about 920×720, scaled to the window), with the rest of DSH still visible and both sidebars in the room it leaves.
+Click the window icon in the session title bar. The float opens at about 450×720 — its long-standing size — capped by the application window, with the rest of DSH still visible.
 
 The same button cycles through three states:
 
@@ -38,7 +38,7 @@ Hold the window's title bar and drag. Holding still for **1.2 seconds** arms the
 | --- | --- |
 | **Left sidebar** | The window is minimised into the left sidebar. It is not closed; its taskbar row is the way back. The middle column stays empty. |
 | **Centre** | The window closes and the conversation returns to the middle column. |
-| **Right sidebar** | The conversation docks as a native page in the right sidebar, with DSH's own return and close controls. |
+| **Right sidebar** | Only while the Conversation fills the main column: the conversation docks as a native page in the right sidebar, with DSH's own return and close controls. Plugins, Automations, Settings and every other left-sidebar page draw no right column, so a drag that ends there returns the conversation to the middle column. |
 
 The left-sidebar row carries the Conversation's title, not the plugin's name. It keeps that title while the window looks at other Conversations. Clicking the row only shows and raises that window; it never selects the plugin's main panel and never takes a plugin or automation page away.
 
@@ -57,13 +57,13 @@ A window for a Session that is **not** the live one still shows a read-only tran
 Each Session can have one float. Every float gets a row in the left sidebar, ordered as a taskbar. Rows are named after their Sessions.
 
 - Clicking a row **raises that window**. It does not switch the current Session and does not change the main panel.
-- A non-live window shows a **Switch to this conversation** chip when it is on top. Clicking it makes that Session live; the window then takes the real conversation column.
+- A non-live window shows a **Switch to this conversation** chip when it is on top. Clicking it makes that Session live; the window then takes the real conversation column. Opened from Plugins, Automations or another non-conversation page it keeps that page — the page stays in the middle column and the window becomes the same full local conversation a live window shows on a page.
 - Closing one window does not touch the others.
 - A session taskbar row is an entry, never a second live copy of the conversation.
 
 ## Dock into the right sidebar
 
-Dragging right, or using **Move the conversation here**, hands the tab to DSH's right sidebar. The tab type is registered with `keepMounted`, so switching to another right-sidebar tab leaves the conversation in its own tab body. The column follows whichever retained body is on screen while its Session is live; for any other Session the middle column is the seat again.
+The right sidebar guide's own **Move the conversation here** row hands the tab to DSH's right sidebar; a drag never docks, because the right column is drawn only while the Conversation fills the main column. The tab type is registered with `keepMounted`, so switching to another right-sidebar tab leaves the conversation in its own tab body. The column follows whichever retained body is on screen while its Session is live; for any other Session the middle column is the seat again.
 
 ## Draft and composer
 

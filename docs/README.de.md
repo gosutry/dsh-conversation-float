@@ -16,7 +16,7 @@
 
 ## Öffnen, minimieren, schließen
 
-Klicke auf das Fenstersymbol in der Titelleiste der Sitzung. Das Float öffnet groß (etwa 920×720, an das Fenster skaliert), während der Rest von DSH weiterhin sichtbar ist und beide Seitenleisten den Platz nutzen, den es freilässt.
+Klicke auf das Fenstersymbol in der Titelleiste der Sitzung. Das Float öffnet in seiner langjährigen Größe (etwa 450×720, begrenzt durch das Anwendungsfenster), während der Rest von DSH weiterhin sichtbar ist.
 
 Derselbe Knopf durchläuft drei Zustände:
 
@@ -38,7 +38,7 @@ Halte die Titelleiste des Fensters fest und ziehe. Wenn du **1,2 Sekunden** stil
 | --- | --- |
 | **Linke Seitenleiste** | Das Fenster wird in die linke Seitenleiste minimiert. Es wird nicht geschlossen; seine Taskleisten-Zeile ist der Weg zurück. Die mittlere Spalte bleibt leer. |
 | **Mitte** | Das Fenster schließt sich, und die Konversation kehrt in die mittlere Spalte zurück. |
-| **Rechte Seitenleiste** | Die Konversation dockt als native Seite in der rechten Seitenleiste an, mit DSHs eigenen Zurück- und Schließen-Steuerelementen. |
+| **Rechte Seitenleiste** | Nur solange die Konversation die Hauptspalte füllt: Die Konversation dockt als native Seite in der rechten Seitenleiste an, mit DSHs eigenen Zurück- und Schließen-Steuerelementen. Plugin-, Automatisierungs-, Einstellungs- und alle anderen Seiten der linken Seitenleiste zeichnen keine rechte Spalte; ein Zug dorthin schickt die Konversation in die Mitte zurück. |
 
 Die Zeile in der linken Seitenleiste trägt den Titel der Conversation, nicht den Namen des Plugins. Sie behält diesen Titel, während das Fenster andere Conversations betrachtet. Ein Klick auf die Zeile zeigt dieses Fenster nur an und holt es nach vorn; er wählt nie das Hauptpanel des Plugins aus und nimmt nie eine Plugin- oder Automations-Seite weg.
 
@@ -57,13 +57,13 @@ Ein Fenster für eine Session, die **nicht** die laufende ist, zeigt weiterhin e
 Jede Session kann ein Float haben. Jedes Float erhält eine Zeile in der linken Seitenleiste, angeordnet wie eine Taskleiste. Die Zeilen sind nach ihren Sessions benannt.
 
 - Ein Klick auf eine Zeile **holt dieses Fenster nach vorn**. Er wechselt nicht die aktuelle Session und ändert nicht das Hauptpanel.
-- Ein nicht laufendes Fenster zeigt einen Chip **Zu dieser Konversation wechseln**, wenn es obenauf liegt. Ein Klick darauf macht diese Session zur laufenden; das Fenster übernimmt dann die echte Konversationsspalte.
+- Ein nicht laufendes Fenster zeigt einen Chip **Zu dieser Konversation wechseln**, wenn es obenauf liegt. Ein Klick darauf macht diese Session zur laufenden; das Fenster übernimmt dann die echte Konversationsspalte. Über Plugins, Automatisierungen oder eine andere Nicht-Konversationsseite geöffnet, bleibt diese Seite stehen — sie behält die mittlere Spalte, und das Fenster wird dieselbe vollständige lokale Konversation, die ein laufendes Fenster auf einer Seite zeigt.
 - Das Schließen eines Fensters berührt die anderen nicht.
 - Eine Taskleisten-Zeile einer Session ist ein Eintrag, nie eine zweite aktive Kopie der Konversation.
 
 ## In die rechte Seitenleiste docken
 
-Das Ziehen nach rechts oder die Verwendung von **Konversation hierher verschieben** übergibt den Tab an die rechte Seitenleiste von DSH. Der Tab-Typ ist mit `keepMounted` registriert, sodass der Wechsel zu einem anderen Tab der rechten Seitenleiste die Konversation in ihrem eigenen Tab-Body belässt. Die Spalte folgt dem jeweils angezeigten beibehaltenen Body, solange ihre Session läuft; bei jeder anderen Session ist die mittlere Spalte wieder der Platz.
+Die Zeile **Konversation hierher verschieben** in der rechten Seitenleiste selbst übergibt den Tab an die rechte Seitenleiste von DSH; Ziehen dockt nie an, weil die rechte Spalte nur gezeichnet wird, solange die Konversation die Hauptspalte füllt. Der Tab-Typ ist mit `keepMounted` registriert, sodass der Wechsel zu einem anderen Tab der rechten Seitenleiste die Konversation in ihrem eigenen Tab-Body belässt. Die Spalte folgt dem jeweils angezeigten beibehaltenen Body, solange ihre Session läuft; bei jeder anderen Session ist die mittlere Spalte wieder der Platz.
 
 ## Entwurf und Composer
 

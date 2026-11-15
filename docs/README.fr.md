@@ -16,7 +16,7 @@
 
 ## Ouvrir, réduire, fermer
 
-Cliquez sur l'icône de fenêtre dans la barre de titre de la session. Le flottant s'ouvre en grand (environ 920×720, ajusté à la fenêtre), le reste de DSH restant visible et les deux barres latérales dans l'espace qu'il laisse.
+Cliquez sur l'icône de fenêtre dans la barre de titre de la session. Le flottant s'ouvre à sa taille historique (environ 450×720, limitée par la fenêtre de l'application), le reste de DSH restant visible.
 
 Le même bouton cycle entre trois états :
 
@@ -38,7 +38,7 @@ Maintenez la barre de titre de la fenêtre et faites glisser. Un maintien immobi
 | --- | --- |
 | **Barre latérale gauche** | La fenêtre est réduite dans la barre latérale gauche. Elle n'est pas fermée ; sa ligne de barre des tâches est le moyen d'y revenir. La colonne centrale reste vide. |
 | **Centre** | La fenêtre se ferme et la conversation retourne dans la colonne centrale. |
-| **Barre latérale droite** | La conversation s'ancre comme une page native dans la barre latérale droite, avec les propres contrôles de retour et de fermeture de DSH. |
+| **Barre latérale droite** | Uniquement tant que la conversation occupe la colonne principale : elle s'ancre comme une page native dans la barre latérale droite, avec les propres contrôles de retour et de fermeture de DSH. Les pages de plugins, d'automatisations, de réglages et les autres entrées de la barre gauche ne dessinent aucune colonne droite, donc déposer là ramène la conversation au centre. |
 
 La ligne de la barre latérale gauche porte le titre de la conversation, et non le nom du plugin. Elle conserve ce titre même lorsque la fenêtre affiche d'autres conversations. Cliquer sur la ligne ne fait qu'afficher et remonter cette fenêtre ; cela ne sélectionne jamais le panneau principal du plugin et ne retire jamais une page de plugin ou d'automation.
 
@@ -57,13 +57,13 @@ Une fenêtre pour une Session qui n'est **pas** la session active affiche toujou
 Chaque Session peut avoir un flottant. Chaque flottant obtient une ligne dans la barre latérale gauche, ordonnée comme une barre des tâches. Les lignes portent le nom de leur Session.
 
 - Cliquer sur une ligne **remonte cette fenêtre**. Cela ne change pas la Session courante et ne modifie pas le panneau principal.
-- Une fenêtre non active affiche une puce **Passer à cette conversation** lorsqu'elle est au premier plan. Cliquer dessus rend cette Session active ; la fenêtre prend alors la vraie colonne de conversation.
+- Une fenêtre non active affiche une puce **Passer à cette conversation** lorsqu'elle est au premier plan. Cliquer dessus rend cette Session active ; la fenêtre prend alors la vraie colonne de conversation. Cliqué depuis Plugins, Automatisations ou une autre page hors conversation, il garde cette page — elle reste dans la colonne centrale et la fenêtre devient la même conversation locale complète qu'une fenêtre active affiche sur une page.
 - Fermer une fenêtre ne touche pas aux autres.
 - Une ligne de barre des tâches de session est une entrée, jamais une seconde copie active de la conversation.
 
 ## Ancrer dans la barre latérale droite
 
-Faire glisser vers la droite, ou utiliser **Déplacer la conversation ici**, confie l'onglet à la barre latérale droite de DSH. Le type d'onglet est enregistré avec `keepMounted`, de sorte que passer à un autre onglet de la barre latérale droite laisse la conversation dans le corps de son propre onglet. La colonne suit le corps retenu qui est à l'écran tant que sa Session est active ; pour toute autre Session, la colonne centrale redevient la place.
+La ligne **Déplacer la conversation ici** de la barre latérale droite elle-même confie l'onglet à la barre latérale droite de DSH ; le glisser n'ancre plus, car la colonne droite n'est dessinée que tant que la conversation occupe la colonne principale. Le type d'onglet est enregistré avec `keepMounted`, de sorte que passer à un autre onglet de la barre latérale droite laisse la conversation dans le corps de son propre onglet. La colonne suit le corps retenu qui est à l'écran tant que sa Session est active ; pour toute autre Session, la colonne centrale redevient la place.
 
 ## Brouillon et composeur
 
